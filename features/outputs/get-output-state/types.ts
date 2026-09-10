@@ -76,6 +76,12 @@ export type BroadcastOutputState = {
   // contínuo. Consumidos pelo scheduler client em output-canvas.tsx, nunca pelo server.
   agendaOpenSeconds: number | null;
   agendaPauseSeconds: number | null;
+  // Reprodução sincronizada de grupo (v1.8) — preenchido quando o grupo desta tela está marcado
+  // como sincronizado (setting broadcast.syncedGroups) E ela toca uma playlist com itens. A view
+  // mostra o item `itemIndex` e dá seek no <video> pra bater `startedAtMs`; ao terminar o item,
+  // faz POST em /api/broadcast/output/:token/sync-advance em vez de avançar sozinha. null = sem
+  // sincronização (comportamento normal, cada tela no seu tempo).
+  sync: { playlistId: string; itemIndex: number; itemId: string; startedAtMs: number } | null;
 };
 
 export type GetOutputStateResult = OperationResult<BroadcastOutputState>;

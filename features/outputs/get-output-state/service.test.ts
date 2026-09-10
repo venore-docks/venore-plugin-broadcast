@@ -138,6 +138,7 @@ describe("getOutputState", () => {
         timeZone: "America/Sao_Paulo",
         agendaOpenSeconds: null,
         agendaPauseSeconds: null,
+        sync: null,
       },
     });
     expect(findSceneById).not.toHaveBeenCalled();

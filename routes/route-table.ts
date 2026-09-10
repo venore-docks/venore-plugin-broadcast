@@ -6,6 +6,7 @@ import SetupPage from "./setup/page";
 import { GET as streamGET } from "./api/stream/route";
 import { POST as uploadPOST } from "./api/upload/route";
 import { POST as beaconPOST } from "./api/beacon/route";
+import { POST as syncAdvancePOST } from "./api/sync-advance/route";
 import { GET as outputEventsGET } from "./api/output-events/route";
 import { GET as outputStateGET } from "./api/output-state/route";
 import { POST as outputDiagnosticsBrowserPOST } from "./api/output-diagnostics-browser/route";
@@ -39,6 +40,9 @@ export const broadcastRouteTable: PluginRouteTable = {
     { pattern: "output/:token/state", handlers: { GET: asPluginApiHandler(outputStateGET) } },
     // Telemetria da TV de volta pro servidor (viewport/navegador/status) — ver routes/api/beacon.
     { pattern: "output/:token/beacon", handlers: { POST: asPluginApiHandler(beaconPOST) } },
+    // Reprodução sincronizada de grupo (v1.8) — a TV avisa "acabou o item" pra o servidor avançar
+    // o cursor. Ver routes/api/sync-advance.
+    { pattern: "output/:token/sync-advance", handlers: { POST: asPluginApiHandler(syncAdvancePOST) } },
     { pattern: "output/:token/diagnostics/browser", handlers: { POST: asPluginApiHandler(outputDiagnosticsBrowserPOST) } },
     { pattern: "output/:token/diagnostics/agent", handlers: { POST: asPluginApiHandler(outputDiagnosticsAgentPOST) } },
     // Pública de propósito (pedido explícito: "no PC eu posso entrar na rota e baixar o script") —

@@ -10,7 +10,7 @@ import {
   type OutputStageTransform,
 } from "../../shared/output-stage";
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
-import { FreezeContext, NowPlayingContext, type NowPlayingInfo } from "./now-playing-context";
+import { FreezeContext, NowPlayingContext, SyncContext, type NowPlayingInfo, type SyncInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
@@ -363,8 +363,12 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
   }, [state.takeoverExpiresAt]);
   const takeoverActive = !takeoverExpired && Boolean(state.takeoverMessage || state.takeoverMediaUrl);
 
+  // Reprodução sincronizada de grupo (v1.8) — só vem preenchido pras telas de grupo sincronizado.
+  const syncInfo: SyncInfo | null = state.sync ? { token, ...state.sync } : null;
+
   return (
     <NowPlayingContext.Provider value={reportNowPlaying}>
+    <SyncContext.Provider value={syncInfo}>
     <FreezeContext.Provider value={state.frozen}>
     {/* Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
         preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
@@ -477,6 +481,7 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
       )}
     </div>
     </FreezeContext.Provider>
+    </SyncContext.Provider>
     </NowPlayingContext.Provider>
   );
 }

@@ -63,6 +63,7 @@ import {
   setOutputFrozenAction,
   setOutputCardColorAction,
   setOutputGroupAction,
+  setSyncedGroupAction,
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
   getOutputTelemetryAction,
@@ -881,7 +882,40 @@ function GroupBulkButton({ groupName, action, label }: { groupName: string; acti
   );
 }
 
-function GroupsPanel({ outputs }: { outputs: BroadcastOutputRecord[] }) {
+// Liga/desliga "reprodução sincronizada" de um grupo (v1.8). Otimista + envia direto (ref-based
+// requestSubmit, mesmo padrão dos outros toggles deste arquivo).
+function GroupSyncToggle({ groupName, enabled }: { groupName: string; enabled: boolean }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const enabledInputRef = useRef<HTMLInputElement>(null);
+  const [checked, setChecked] = useState(enabled);
+  const [state, formAction, pending] = useActionState(setSyncedGroupAction, initialState);
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: "Sincronização atualizada.",
+    onError: () => setChecked(enabled),
+  });
+  const id = useId();
+
+  function handleChange(next: boolean) {
+    setChecked(next);
+    if (enabledInputRef.current) enabledInputRef.current.value = next ? "true" : "false";
+    formRef.current?.requestSubmit();
+  }
+
+  return (
+    <form ref={formRef} action={formAction} className="flex items-center gap-1.5">
+      <input type="hidden" name="groupName" value={groupName} />
+      <input type="hidden" name="enabled" ref={enabledInputRef} defaultValue={enabled ? "false" : "true"} />
+      <label htmlFor={id} className="cursor-pointer text-xs text-muted-foreground">
+        Sincronizar reprodução
+      </label>
+      <Switch id={id} checked={checked} onCheckedChange={handleChange} disabled={pending} />
+    </form>
+  );
+}
+
+function GroupsPanel({ outputs, syncedGroups }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[] }) {
   const counts = new Map<string, number>();
   for (const output of outputs) {
     if (output.groupName) counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
@@ -892,15 +926,23 @@ function GroupsPanel({ outputs }: { outputs: BroadcastOutputRecord[] }) {
   return (
     <div className="space-y-2 rounded-panel border border-border bg-card p-3">
       <p className="text-sm font-medium text-foreground">Grupos de telas</p>
-      <p className="text-xs text-muted-foreground">Ações em lote pra todas as telas de um grupo.</p>
-      <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">
+        Ações em lote e reprodução sincronizada. Sincronizar só faz sentido quando as telas do grupo tocam a mesma playlist —
+        as TVs mostram o mesmo item, com ajuste de tempo (~1-2s de diferença, não é frame a frame).
+      </p>
+      <div className="space-y-2">
         {groups.map(([name, count]) => (
-          <div key={name} className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0">
-            <span className="text-sm font-medium text-foreground">{name}</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {count} {count === 1 ? "tela" : "telas"}
-            </span>
-            <div className="ml-auto flex flex-wrap gap-1">
+          <div key={name} className="space-y-1.5 border-t border-border/60 pt-2 first:border-t-0 first:pt-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-foreground">{name}</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {count} {count === 1 ? "tela" : "telas"}
+              </span>
+              <div className="ml-auto">
+                <GroupSyncToggle groupName={name} enabled={syncedGroups.includes(name)} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
               <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
               <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
               <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
@@ -1775,7 +1817,7 @@ function CreateOutputDialog() {
   );
 }
 
-function GroupsDialog({ outputs }: { outputs: BroadcastOutputRecord[] }) {
+function GroupsDialog({ outputs, syncedGroups }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[] }) {
   const hasGroups = outputs.some((output) => output.groupName);
   if (!hasGroups) return null;
   return (
@@ -1788,9 +1830,9 @@ function GroupsDialog({ outputs }: { outputs: BroadcastOutputRecord[] }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Grupos de telas</DialogTitle>
-          <DialogDescription>Acoes em lote para todas as telas de um grupo.</DialogDescription>
+          <DialogDescription>Ações em lote e reprodução sincronizada por grupo.</DialogDescription>
         </DialogHeader>
-        <GroupsPanel outputs={outputs} />
+        <GroupsPanel outputs={outputs} syncedGroups={syncedGroups} />
       </DialogContent>
     </Dialog>
   );
@@ -1805,6 +1847,7 @@ export function OutputsSection({
   agendas = [],
   agendaEvents = [],
   schedulesByOutputId = {},
+  syncedGroups = [],
   canManageAll = true,
   agendaNamesByOutputId = {},
 }: {
@@ -1816,6 +1859,7 @@ export function OutputsSection({
   agendas?: BroadcastAgendaRecord[];
   agendaEvents?: BroadcastAgendaEventRecord[];
   schedulesByOutputId?: Record<string, BroadcastPlaylistScheduleSlot[]>;
+  syncedGroups?: string[];
   // false pra um ator sem broadcast.manage (so broadcast.outputs.manage - "responsavel" por
   // telas especificas, ver page.tsx) - esconde criar/apagar tela + grupos + programacao.
   canManageAll?: boolean;
@@ -1868,7 +1912,7 @@ export function OutputsSection({
           canManageAll ? (
             <div className="flex flex-col gap-2">
               <CreateOutputDialog />
-              <GroupsDialog outputs={outputs} />
+              <GroupsDialog outputs={outputs} syncedGroups={syncedGroups} />
               <VideosFolderHealthBadge />
             </div>
           ) : undefined

@@ -996,6 +996,40 @@ export async function updateBroadcastRegionAction(
   return { error: null };
 }
 
+// Liga/desliga a reprodução sincronizada de um grupo (v1.8). Guarda a lista de nomes no setting
+// broadcast.syncedGroups (JSON array). Não recarrega a página — só o diálogo "Grupos" precisa
+// refletir, e ele relê o setting no próximo open; as TVs pegam o efeito no próximo get-output-state.
+export async function setSyncedGroupAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const groupName = requireString(formData, "groupName");
+  const enabled = requireString(formData, "enabled") === "true";
+  if (!groupName) return { error: "Grupo é obrigatório." };
+
+  const current = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
+  let groups: string[] = [];
+  const raw = current.success && typeof current.data?.value === "string" ? current.data.value : "[]";
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) groups = parsed.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    groups = [];
+  }
+
+  const next = enabled
+    ? [...new Set([...groups, groupName])]
+    : groups.filter((entry) => entry !== groupName);
+
+  const result = await setSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, value: JSON.stringify(next) });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
 export async function updateBroadcastBrandColorAction(
   _prevState: BroadcastActionState,
   formData: FormData,
@@ -1078,6 +1112,18 @@ export async function updateBroadcastNewsExcludeKeywordsAction(
 export async function getBroadcastRegion(): Promise<string> {
   const result = await getSetting({ key: BROADCAST_SETTINGS.region.key });
   return result.success && typeof result.data?.value === "string" ? result.data.value : "";
+}
+
+// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups, JSON array).
+export async function getBroadcastSyncedGroups(): Promise<string[]> {
+  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
+  const raw = result.success && typeof result.data?.value === "string" ? result.data.value : "[]";
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function getBroadcastBrandColor(): Promise<string> {

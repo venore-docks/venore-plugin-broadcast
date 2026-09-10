@@ -94,6 +94,14 @@ export const BROADCAST_SETTINGS = {
     defaultValue: "",
     label: "Chave do agent de diagnóstico (PowerShell)",
   },
+  // Nomes de grupo (JSON array) cuja reprodução é sincronizada — todas as telas do grupo que
+  // tocam a mesma playlist mostram o mesmo item, com seek pra bater o tempo (v1.8). O servidor
+  // mantém um cursor por playlist (runtime/sync-cursor.ts). Toggle por grupo no diálogo "Grupos".
+  syncedGroups: {
+    key: "broadcast.syncedGroups",
+    defaultValue: "[]",
+    label: "Grupos com reprodução sincronizada",
+  },
 } as const;
 
 export type BroadcastSettingField = keyof typeof BROADCAST_SETTINGS;

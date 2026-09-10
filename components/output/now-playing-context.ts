@@ -13,3 +13,11 @@ export const NowPlayingContext = createContext<((info: NowPlayingInfo | null) =>
 // "Congelar" — mesma ponte canvas ↔ layer. Quando true, o PlaylistLayer desliga o timer de avanço
 // e o onEnded do <video>, deixando o item atual fixo.
 export const FreezeContext = createContext(false);
+
+// Reprodução sincronizada de grupo (v1.8). Quando não-null, o PlaylistLayer NÃO controla o índice
+// nem avança sozinho: mostra `itemIndex`, dá seek no <video> pra bater `startedAtMs`, e ao terminar
+// o item faz POST em /api/broadcast/output/<token>/sync-advance. O servidor (get-output-state)
+// preenche isso só pras telas de grupo sincronizado.
+export type SyncInfo = { token: string; playlistId: string; itemIndex: number; itemId: string; startedAtMs: number };
+
+export const SyncContext = createContext<SyncInfo | null>(null);

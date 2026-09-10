@@ -16,7 +16,7 @@ import {
 import { isEventHappeningNow } from "../../shared/weekly-recurrence";
 import { isSameZonedCalendarDay } from "../../shared/timezone";
 import { resolveContrastPalette } from "./contrast-palette";
-import { FreezeContext, NowPlayingContext } from "./now-playing-context";
+import { FreezeContext, NowPlayingContext, SyncContext } from "./now-playing-context";
 import {
   DEFAULT_AGENDA_BACKGROUND,
   TV_ACCENT_COLOR,
@@ -623,14 +623,34 @@ function PlaylistLayer({
   const [manualTick, setManualTick] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const slides = buildPlaylistSlides(items);
+
+  // Reprodução sincronizada de grupo (v1.8): quando não-null, o índice vem do servidor (sync.
+  // itemIndex) e o avanço vira um POST em /api/broadcast/output/<token>/sync-advance — o servidor
+  // avança o cursor e manda "sync-changed", e a TV pega o item novo no refetch. syncReportedForRef
+  // garante um report por item (onEnded + watchdog não spammam).
+  const sync = useContext(SyncContext);
+  const syncReportedForRef = useRef<string | null>(null);
+  const reportSyncEnd = (itemId: string) => {
+    if (!sync || syncReportedForRef.current === itemId) return;
+    syncReportedForRef.current = itemId;
+    void fetch(`/api/broadcast/output/${sync.token}/sync-advance`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ itemId }),
+      keepalive: true,
+    }).catch(() => {});
+  };
   // O canal é essencialmente vídeo: uma tela sem playlist cadastrada (items vazio), ou com uma
   // playlist que não tem NENHUM item de vídeo (só imagem/página/notícia/evento), cai na tela de
   // espera branded em vez de rodar esses itens — pedido explícito. `slides` vazio já cobria o
   // primeiro caso; `hasPlayableVideo` cobre o segundo.
   const hasPlayableVideo = slides.some((slide) => slide.kind === "video");
 
+  // Índice efetivo: do servidor quando sincronizado (clamp pra não estourar se a playlist mudou
+  // entre o cursor e este refetch), local caso contrário.
+  const effectiveIndex = sync ? Math.min(Math.max(sync.itemIndex, 0), Math.max(slides.length - 1, 0)) : index % Math.max(slides.length, 1);
   const advance = () => setIndex((previous) => (previous + 1) % slides.length);
-  const current = slides.length > 0 ? slides[index % slides.length] : null;
+  const current = slides.length > 0 ? slides[effectiveIndex] : null;
   // Bloco de notícias sem nenhuma manchete, ou evento "em destaque" cujo evento referenciado sumiu
   // (apagado depois do item ter sido criado na playlist — ver classifyPlaylistItem), não têm o que
   // mostrar — sem isso, ficava um texto apagado sobre tela preta pelos segundos inteiros
@@ -645,24 +665,65 @@ function PlaylistLayer({
   // "Congelar" (output.frozen, via FreezeContext) — trava o item atual: nem o timer avança, nem o
   // fim do vídeo. Volta a rodar quando o admin descongela (evento SSE traz frozen=false).
   const frozen = useContext(FreezeContext);
-  useTimedAdvance(timedDurationMs, advance, timedActive && !frozen, manualTick);
-  const advanceUnlessFrozen = () => {
-    if (!frozen) advance();
+  // Fim do item: congelado não faz nada; sincronizado avisa o servidor (não avança sozinho);
+  // normal avança o índice local.
+  const onItemEnd = () => {
+    if (frozen) return;
+    // items e slides são 1:1; items[effectiveIndex].id é o id real do item pra qualquer kind.
+    if (sync) reportSyncEnd(items[effectiveIndex]?.id ?? sync.itemId);
+    else advance();
   };
+  useTimedAdvance(timedDurationMs, onItemEnd, timedActive && !frozen, manualTick);
+  const advanceUnlessFrozen = onItemEnd;
+
+  // Seek do vídeo pra bater o relógio do grupo (abordagem A): ao trocar de item (sync.itemId /
+  // startedAtMs novos) e a cada ~10s pra corrigir deriva. Só pra item de vídeo — imagem/página
+  // não têm posição contínua.
+  useEffect(() => {
+    if (!sync || current?.kind !== "video") return;
+    const seekToClock = () => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
+      const expected = (Date.now() - sync.startedAtMs) / 1000;
+      if (expected < 0 || expected >= video.duration - 0.4) return;
+      if (Math.abs(video.currentTime - expected) > 1.5) {
+        try {
+          video.currentTime = expected;
+        } catch {
+          // seek pode falhar se o buffer ainda não cobre o ponto — a próxima passada tenta de novo
+        }
+      }
+    };
+    seekToClock();
+    const onMeta = () => seekToClock();
+    videoRef.current?.addEventListener("loadedmetadata", onMeta);
+    const drift = setInterval(seekToClock, 10_000);
+    return () => {
+      clearInterval(drift);
+      videoRef.current?.removeEventListener("loadedmetadata", onMeta);
+    };
+    // syncReportedForRef zera junto — item novo, pode reportar de novo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sync?.itemId, sync?.startedAtMs, current?.kind]);
+
+  // Item novo no cursor do grupo → libera um novo report de "acabou".
+  useEffect(() => {
+    syncReportedForRef.current = null;
+  }, [sync?.itemId]);
 
   // Reporta "qual item toca agora" pro beacon de telemetria (via NowPlayingContext, provido pelo
   // OutputCanvas). items e slides são 1:1, então items[index] casa com `current`.
   const reportNowPlaying = useContext(NowPlayingContext);
-  const nowPlayingItem = items.length > 0 ? items[index % items.length] : null;
+  const nowPlayingItem = items.length > 0 ? (items[effectiveIndex] ?? null) : null;
   useEffect(() => {
     if (!reportNowPlaying) return;
     reportNowPlaying(
       nowPlayingItem
-        ? { index: (index % items.length) + 1, count: items.length, label: nowPlayingItem.label, itemId: nowPlayingItem.id }
+        ? { index: effectiveIndex + 1, count: items.length, label: nowPlayingItem.label, itemId: nowPlayingItem.id }
         : null,
     );
     return () => reportNowPlaying(null);
-  }, [reportNowPlaying, index, items, items.length, nowPlayingItem]);
+  }, [reportNowPlaying, effectiveIndex, items, items.length, nowPlayingItem]);
 
   // Sem item resolvível, ou sem nenhum vídeo na playlist — tela de espera branded "nenhum
   // conteúdo" no lugar do texto cru sobre tela preta (Fase 11).
@@ -688,7 +749,7 @@ function PlaylistLayer({
         videoRef={videoRef}
         onEnded={advanceUnlessFrozen}
         onStuck={() => {
-          advance();
+          onItemEnd();
           setManualTick((tick) => tick + 1);
         }}
       />
@@ -702,7 +763,7 @@ function PlaylistLayer({
         url={current.url}
         withAudio={current.withAudio}
         onFailure={() => {
-          advance();
+          onItemEnd();
           setManualTick((tick) => tick + 1);
         }}
       />
@@ -748,7 +809,7 @@ function PlaylistLayer({
     <div className="relative h-full w-full overflow-hidden">
       {blurredFill}
       {content}
-      {slides.length > 1 && (
+      {slides.length > 1 && !sync && (
         <div
           role="button"
           aria-label="Avançar para o próximo item da playlist"

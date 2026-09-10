@@ -11,6 +11,7 @@ import {
   DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
 } from "../../../shared/playback-defaults";
 import { BROADCAST_SETTINGS, type BroadcastAgendaAnimationStyle, type BroadcastAgendaViewSize } from "../../../shared/settings";
+import { ensureSyncCursor, resetSyncCursor } from "../../../runtime/sync-cursor";
 import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
@@ -29,7 +30,14 @@ import {
   findSceneById,
   findVisiblePlaylistItemsByPlaylistId,
 } from "./store";
-import type { AgendaRotationEntry, AgendaRotationEvent, GetOutputStateQuery, GetOutputStateResult, PlaylistItemSummary } from "./types";
+import type {
+  AgendaRotationEntry,
+  AgendaRotationEvent,
+  BroadcastOutputState,
+  GetOutputStateQuery,
+  GetOutputStateResult,
+  PlaylistItemSummary,
+} from "./types";
 
 const AGENDA_EVENTS_PER_ROTATION_LIMIT = 4;
 
@@ -208,6 +216,20 @@ async function resolveAgendaViewSize(): Promise<BroadcastAgendaViewSize> {
   return "grande";
 }
 
+// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups, JSON array). []
+// quando ausente/inválido.
+async function resolveSyncedGroups(): Promise<string[]> {
+  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
+  const value = result.success ? result.data?.value : null;
+  if (typeof value !== "string" || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 // Fuso da instituição — sempre resolvido (não é lazy como os demais): o client precisa dele pra
 // formatar QUALQUER data/hora (relógio do rodapé, cards de agenda, "hoje"/"agora"), e é uma
 // leitura de setting de uma linha. Cai no default quando ausente/inválido.
@@ -274,6 +296,36 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const hasPlayableContent = Object.values(playlistItemsByPlaylistId).some((items) =>
     items.some((item) => item.kind === "video"),
   );
+
+  // Reprodução sincronizada de grupo (v1.8): se o grupo desta tela está marcado como sincronizado
+  // e ela toca uma playlist com itens, o servidor mantém um cursor único por playlist — a 1ª tela
+  // a pedir o estado ancora o grupo (item 0, começando agora); as demais seguem. O avanço vem por
+  // POST em /api/broadcast/output/:token/sync-advance (routes/api/sync-advance).
+  const primaryVideoLayer = layers.find((layer) => layer.type === "video" && readStringConfig(layer.config, "playlistId"));
+  const primaryPlaylistId = primaryVideoLayer ? readStringConfig(primaryVideoLayer.config, "playlistId") : null;
+  const syncItems = primaryPlaylistId ? (playlistItemsByPlaylistId[primaryPlaylistId] ?? []) : [];
+  let sync: BroadcastOutputState["sync"] = null;
+  if (output.groupName && primaryPlaylistId && syncItems.length > 0) {
+    const syncedGroups = await resolveSyncedGroups();
+    if (syncedGroups.includes(output.groupName)) {
+      const cursor = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
+      let position = syncItems.findIndex((item) => item.id === cursor.itemId);
+      if (position === -1) {
+        // A playlist mudou (item removido/reordenado) — re-ancora do zero.
+        resetSyncCursor(primaryPlaylistId);
+        const fresh = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
+        position = 0;
+        sync = { playlistId: primaryPlaylistId, itemIndex: 0, itemId: fresh.itemId, startedAtMs: fresh.startedAtMs };
+      } else {
+        sync = {
+          playlistId: primaryPlaylistId,
+          itemIndex: position,
+          itemId: cursor.itemId,
+          startedAtMs: cursor.startedAtMs,
+        };
+      }
+    }
+  }
 
   // Horário de funcionamento: fora da janela → modo espera automático. O toggle manual (offline)
   // vence por cima. effectiveOffline substitui output.offline daqui pra frente.
@@ -369,6 +421,7 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       timeZone,
       agendaOpenSeconds: output.agendaOpenSeconds,
       agendaPauseSeconds: output.agendaPauseSeconds,
+      sync,
     },
   };
 }

@@ -320,6 +320,9 @@ export type BroadcastOutputEvent =
   // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
   // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".
   | { type: "settings-changed" }
+  // Cursor de reprodução sincronizada do grupo avançou (v1.8) — a TV rebusca o estado e pula pro
+  // item novo. Mesmo tratamento genérico "!= state → rebuscar".
+  | { type: "sync-changed" }
   | { type: "reload" };
 
 // Snapshot que a própria view de saída reporta sobre si mesma (ver components/output/output-
