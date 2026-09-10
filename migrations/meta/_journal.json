@@ -92,6 +92,13 @@
       "when": 1789069936715,
       "tag": "0012_output_card_color",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789070153430,
+      "tag": "0013_alert_takeover_target",
+      "breakpoints": true
     }
   ]
 }

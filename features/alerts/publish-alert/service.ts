@@ -12,7 +12,7 @@ export async function publishAlert(command: PublishAlertCommand): Promise<Publis
   });
 
   const expiresAt = new Date(Date.now() + command.durationSeconds * 1000);
-  const record = await insertAlert({ message: command.message.trim(), expiresAt });
+  const record = await insertAlert({ message: command.message.trim(), target: command.target ?? null, expiresAt });
 
   endOperation(handle, { success: true });
 

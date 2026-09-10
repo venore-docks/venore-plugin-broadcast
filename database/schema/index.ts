@@ -226,9 +226,13 @@ export const broadcastAgendaEventDates = broadcastSchema.table("agenda_event_dat
 // no futuro). Criado com uma duração; expira sozinho, sem precisar de ação manual pra sumir. Lido
 // pela layer "alert", que ignora a geometria configurada e sempre sobrepõe tudo quando há um
 // aviso ativo (pedido explícito: "quando não houver não aparece, quando houver sobrepõe tudo").
+// target: null = todas as telas (comportamento original). "group:<nome>" = só as telas desse
+// grupo. "output:<id>" = só uma tela. Resolvido em get-output-state por saída — o SSE continua
+// avisando todo mundo (cada TV re-busca o estado e decide se o alerta é pra ela).
 export const broadcastAlerts = broadcastSchema.table("alerts", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   message: text("message").notNull(),
+  target: text("target"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -350,6 +354,8 @@ export const broadcastTakeover = broadcastSchema.table("takeover", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   message: text("message").notNull(),
   mediaAssetId: text("media_asset_id"),
+  // Mesma semântica de alerts.target.
+  target: text("target"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

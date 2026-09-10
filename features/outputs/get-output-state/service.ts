@@ -284,9 +284,9 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   // Fallback de conteúdo: resolvido só se configurado — a view usa quando não há conteúdo tocável.
   const fallbackUrl = output.fallbackMediaAssetId ? await resolveMediaAssetUrl(output.fallbackMediaAssetId) : null;
 
-  // Takeover — global (não por saída), sempre consultado (uma query barata). A view mostra por
+  // Takeover — filtrado por target da saída (null/grupo/tela), sempre consultado (uma query barata). A view mostra por
   // cima de TUDO, inclusive modo espera.
-  const takeover = await findActiveTakeover();
+  const takeover = await findActiveTakeover({ id: output.id, groupName: output.groupName });
   const takeoverMediaUrl = takeover?.mediaAssetId ? await resolveMediaAssetUrl(takeover.mediaAssetId) : null;
 
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
@@ -329,7 +329,7 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       needsWeather ? resolveRegionWeather() : Promise.resolve(null),
       needsNews ? resolveRegionNews() : Promise.resolve([]),
       needsAgenda ? resolveAgendaRotation(output.id, timeZone) : Promise.resolve([]),
-      needsAlert ? findActiveAlert() : Promise.resolve(null),
+      needsAlert ? findActiveAlert({ id: output.id, groupName: output.groupName }) : Promise.resolve(null),
       needsBrandLogo ? getBrandConfig("png").then((brand) => brand.logoUrl) : Promise.resolve(null),
       needsBrandColor ? resolveBrandColor() : Promise.resolve(BROADCAST_SETTINGS.brandColor.defaultValue),
       needsAgenda ? resolveAgendaAnimationStyle() : Promise.resolve(BROADCAST_SETTINGS.agendaAnimationStyle.defaultValue as BroadcastAgendaAnimationStyle),

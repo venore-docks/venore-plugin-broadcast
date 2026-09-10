@@ -15,6 +15,7 @@ export async function publishTakeover(command: PublishTakeoverCommand): Promise<
   const record = await insertTakeover({
     message: command.message.trim(),
     mediaAssetId: command.mediaAssetId,
+    target: command.target ?? null,
     expiresAt,
   });
 

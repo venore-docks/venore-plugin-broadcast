@@ -1,6 +1,12 @@
 import type { OperationResult } from "@venore/plugin-sdk";
-import type { BroadcastAlertRecord } from "../../../contracts/types";
+import type { BroadcastAlertRecord, BroadcastAlertTarget } from "../../../contracts/types";
 
-export type PublishAlertCommand = { message: string; durationSeconds: number; actorId: string };
+// target: null = todas as telas; "group:<nome>" = um grupo; "output:<id>" = uma tela.
+export type PublishAlertCommand = {
+  message: string;
+  durationSeconds: number;
+  target: BroadcastAlertTarget;
+  actorId: string;
+};
 export type PublishAlertInput = Omit<PublishAlertCommand, "actorId">;
 export type PublishAlertResult = OperationResult<BroadcastAlertRecord>;

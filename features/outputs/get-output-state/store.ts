@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, type Column } from "drizzle-orm";
 import { db } from "@venore/plugin-sdk";
 import {
   broadcastAgendaEventDates,
@@ -170,17 +170,31 @@ export async function findAgendaEventById(id: string): Promise<BroadcastAgendaEv
 // não tenha expirado. Devolve o expiresAt junto: o client precisa dele pra esconder a faixa no
 // instante exato do vencimento, sem esperar o poll de 15s (que fazia um aviso de 10s ficar ~20s
 // na tela).
-export async function findActiveAlert(): Promise<{ message: string; expiresAt: Date } | null> {
+// target null = todas as telas; "output:<id>" = só esta; "group:<nome>" = só as telas do grupo.
+// Pega o alerta/takeover mais recente ainda vigente que se aplica a ESTA tela.
+function targetMatches(targetColumn: Column, output: { id: string; groupName: string | null }) {
+  const clauses = [isNull(targetColumn), eq(targetColumn, `output:${output.id}`)];
+  if (output.groupName) clauses.push(eq(targetColumn, `group:${output.groupName}`));
+  return or(...clauses);
+}
+
+export async function findActiveAlert(output: {
+  id: string;
+  groupName: string | null;
+}): Promise<{ message: string; expiresAt: Date } | null> {
   const [row] = await db
     .select({ message: broadcastAlerts.message, expiresAt: broadcastAlerts.expiresAt })
     .from(broadcastAlerts)
-    .where(gt(broadcastAlerts.expiresAt, new Date()))
+    .where(and(gt(broadcastAlerts.expiresAt, new Date()), targetMatches(broadcastAlerts.target, output)))
     .orderBy(desc(broadcastAlerts.createdAt))
     .limit(1);
   return row ?? null;
 }
 
-export async function findActiveTakeover(): Promise<{ message: string; mediaAssetId: string | null; expiresAt: Date } | null> {
+export async function findActiveTakeover(output: {
+  id: string;
+  groupName: string | null;
+}): Promise<{ message: string; mediaAssetId: string | null; expiresAt: Date } | null> {
   const [row] = await db
     .select({
       message: broadcastTakeover.message,
@@ -188,7 +202,7 @@ export async function findActiveTakeover(): Promise<{ message: string; mediaAsse
       expiresAt: broadcastTakeover.expiresAt,
     })
     .from(broadcastTakeover)
-    .where(gt(broadcastTakeover.expiresAt, new Date()))
+    .where(and(gt(broadcastTakeover.expiresAt, new Date()), targetMatches(broadcastTakeover.target, output)))
     .orderBy(desc(broadcastTakeover.createdAt))
     .limit(1);
   return row ?? null;

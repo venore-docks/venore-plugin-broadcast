@@ -918,6 +918,8 @@ export async function publishAlertAction(_prevState: BroadcastActionState, formD
   const result = await publishAlert({
     message: requireString(formData, "message"),
     durationSeconds: requireNumber(formData, "durationSeconds", 30),
+    // "" (todas as telas) → null. "group:<nome>" / "output:<id>" passam direto.
+    target: requireString(formData, "target") || null,
   });
   if (!result.success) return { error: result.error.message };
 
@@ -950,6 +952,7 @@ export async function publishTakeoverAction(_prevState: BroadcastActionState, fo
     message: requireString(formData, "message"),
     mediaAssetId: requireString(formData, "mediaAssetId") || null,
     durationSeconds: requireNumber(formData, "durationSeconds", 60),
+    target: requireString(formData, "target") || null,
   });
   if (!result.success) return { error: result.error.message };
   return { error: null };

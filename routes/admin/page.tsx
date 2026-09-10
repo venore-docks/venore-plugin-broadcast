@@ -265,6 +265,13 @@ export default async function BroadcastAdminPage() {
     agendas.map((agenda) => [agenda.id, (agendaOutputIdsByAgendaId[agenda.id] ?? []).length]),
   );
 
+  // Alvos possíveis pro aviso rápido / comunicado de urgência (v1.8): todas as telas (default),
+  // um grupo, ou uma tela.
+  const alertTargets = {
+    groups: [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort(),
+    outputs: outputs.map((output) => ({ id: output.id, name: output.name })),
+  };
+
   // "Playlists em uso" do Dashboard (v1.7 — não há mais aba Playlists): só as playlists que
   // alguma tela toca, mais usadas primeiro.
   const playlistsInUse = playlists
@@ -300,6 +307,7 @@ export default async function BroadcastAdminPage() {
           playlistsCount={playlists.length}
           agendasCount={agendas.length}
           playlistsInUse={playlistsInUse}
+          alertTargets={alertTargets}
         />
       ),
     },

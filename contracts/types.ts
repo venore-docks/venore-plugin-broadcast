@@ -163,10 +163,14 @@ export type BroadcastPlaylistScheduleSlot = {
 
 // Comunicado de urgência em tela cheia — cobre todas as telas (ver schema). No máximo um ativo,
 // expira sozinho.
+// target: null = todas as telas; "group:<nome>" = um grupo; "output:<id>" = uma tela.
+export type BroadcastAlertTarget = string | null;
+
 export type BroadcastTakeoverRecord = {
   id: string;
   message: string;
   mediaAssetId: string | null;
+  target: BroadcastAlertTarget;
   expiresAt: Date;
   createdAt: Date;
 };
@@ -175,6 +179,7 @@ export type BroadcastTakeoverRecord = {
 export type BroadcastAlertRecord = {
   id: string;
   message: string;
+  target: BroadcastAlertTarget;
   expiresAt: Date;
   createdAt: Date;
 };
