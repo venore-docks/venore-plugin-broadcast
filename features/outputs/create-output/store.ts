@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@venore/plugin-sdk";
-import { broadcastLayers, broadcastOutputs, broadcastScenes } from "../../../database/schema";
+import { broadcastLayers, broadcastOutputs, broadcastPlaylists, broadcastScenes } from "../../../database/schema";
+import { BROADCAST_VIDEOS_FOLDER_PATH } from "../../../shared/settings";
 import { slugifyOutputName } from "../../../shared/output-token";
 import type { BroadcastOutputRecord } from "../../../contracts/types";
 
@@ -26,22 +27,30 @@ async function resolveUniqueToken(name: string): Promise<string> {
   throw new Error("unreachable");
 }
 
-// Cria a saída já com sua "cena padrão" pronta pra tocar: vídeo (playlist escolhida) + agenda +
-// aviso rápido, no layout fixo de 3 zonas que todo o resto do plugin já assume (MainZoneLayer/
-// AgendaLayer/AlertBanner) — pedido explícito: "não vamos precisar configurar manualmente as
-// camadas, você já define isso". O operador só escolhe playlist (aqui) e depois pode trocar de
-// playlist (set-output-playlist) ou abrir/fechar a coluna de agenda (set-output-drawer,
-// reaproveitado — ver comentário em layer-renderer.tsx) — nada além disso é exposto.
+// Cria a saída já com sua "cena padrão" pronta pra tocar: vídeo + agenda + aviso rápido, no
+// layout fixo de 3 zonas que todo o resto do plugin já assume (MainZoneLayer/AgendaLayer/
+// AlertBanner) — pedido explícito: "não vamos precisar configurar manualmente as camadas".
+//
+// A partir do modelo 1:1 (pedido explícito: "criar playlist dedicada por tela"), a tela também
+// nasce com a PRÓPRIA playlist ("Playlist da <tela>", owner_output_id = id da tela) — o operador
+// não escolhe mais uma playlist na criação. Apontar a tela pra uma playlist compartilhada
+// continua possível depois, via setOutputPlaylist (caminho "avançado"). A playlist dedicada aponta
+// pra mesma pasta compartilhada de vídeos (BROADCAST_VIDEOS_FOLDER_PATH) — o "Escanear pasta"
+// decide o subconjunto, igual a qualquer outra playlist local.
 //
 // A camada de vídeo nasce em 100% de largura (config.agendaOpenVariant encolhe pra 80% quando
-// drawerOpen=true, mesmo mecanismo de resolveLayerGeometry que já existia pra abrir/fechar uma
-// "gaveta"); a de agenda nasce nos 20% restantes, mas só é renderizada quando drawerOpen=true
-// (ver LayerRenderer) — sem isso ela ficaria sobrepondo o vídeo quando a coluna está "fechada".
-export async function createOutputWithDefaultScene(input: { name: string; playlistId: string }): Promise<BroadcastOutputRecord> {
+// drawerOpen=true, mesmo mecanismo de resolveLayerGeometry); a de agenda nasce nos 20% restantes,
+// mas só é renderizada quando drawerOpen=true (ver LayerRenderer).
+export async function createOutputWithDefaultScene(input: { name: string }): Promise<BroadcastOutputRecord> {
   const token = await resolveUniqueToken(input.name);
 
   return db.transaction(async (tx) => {
     const [output] = await tx.insert(broadcastOutputs).values({ name: input.name, token }).returning();
+
+    const [playlist] = await tx
+      .insert(broadcastPlaylists)
+      .values({ name: `Playlist da ${input.name}`, folderPath: BROADCAST_VIDEOS_FOLDER_PATH, ownerOutputId: output.id })
+      .returning();
 
     const [scene] = await tx
       .insert(broadcastScenes)
@@ -58,7 +67,7 @@ export async function createOutputWithDefaultScene(input: { name: string; playli
         width: 100,
         height: 100,
         zIndex: 0,
-        config: { playlistId: input.playlistId, agendaOpenVariant: { x: 0, y: 0, width: 80, height: 100 } },
+        config: { playlistId: playlist.id, agendaOpenVariant: { x: 0, y: 0, width: 80, height: 100 } },
         visible: true,
       },
       {

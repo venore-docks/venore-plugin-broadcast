@@ -8,19 +8,28 @@ import {
   addNewsPlaylistItem,
   addScannedPlaylistItems,
   addWebpagePlaylistItem,
+  checkWebpageEmbeddable,
   clearAlert,
   createAgenda,
   createAgendaEvent,
   createOutput,
   createPlaylist,
+  delegateOutput,
   deleteAgenda,
   deleteAgendaEvent,
   deleteOutput,
   deletePlaylist,
   deletePlaylistItem,
+  duplicateOutput,
+  duplicatePlaylist,
+  inspectVideosFolder,
   listConnectedOutputIps,
+  listOutputPinBlocks,
+  listOutputTelemetry,
   publishAlert,
+  reloadOutput,
   reorderAgendas,
+  rotateOutputToken,
   reorderPlaylistItems,
   resetOutputPinAttempts,
   scanPlaylistFolder,
@@ -33,6 +42,7 @@ import {
   setOutputOffline,
   setOutputPin,
   setOutputPlaylist,
+  setOutputPlaylistSchedule,
   setOutputTicker,
   setPlaylistEditors,
   togglePlaylistItemVisibility,
@@ -45,6 +55,7 @@ import { getSetting, setSetting } from "@venore/plugin-sdk/settings";
 import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import type { BroadcastOutputRecord } from "../../contracts/types";
+import type { OutputBeaconSummary, VideosFolderHealth } from "../../index";
 
 export type BroadcastActionState = { error: string | null };
 
@@ -154,6 +165,17 @@ export async function deletePlaylistAction(_prevState: BroadcastActionState, for
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
   const result = await deletePlaylist({ playlistId: requireString(formData, "playlistId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// "Duplicar playlist" — cria "Cópia de X" (compartilhada) com todos os itens. Estrutural.
+export async function duplicatePlaylistAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await duplicatePlaylist({ playlistId: requireString(formData, "playlistId") });
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -278,12 +300,18 @@ export async function updatePlaylistItemAction(
 ): Promise<BroadcastActionState> {
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
+  // Janela de validade: campo <input type="datetime-local"> vazio → null (sem borda), não undefined
+  // — o formulário de edição sempre renderiza os dois, então "vazio" significa "sem limite".
+  // A string de parede é interpretada no fuso da instituição, igual startAt de evento de agenda.
+  const timeZone = await getBroadcastTimezone();
   const result = await updatePlaylistItem({
     itemId: requireString(formData, "itemId"),
     title: requireString(formData, "title") || undefined,
     durationSeconds: optionalNumber(formData, "durationSeconds"),
     url: requireString(formData, "url") || undefined,
     withAudio: formData.get("withAudio") === "on",
+    visibleFrom: optionalDateInZone(formData, "visibleFrom", timeZone) ?? null,
+    visibleUntil: optionalDateInZone(formData, "visibleUntil", timeZone) ?? null,
   });
   if (!result.success) return { error: result.error.message };
 
@@ -381,7 +409,6 @@ export async function createOutputAction(_prevState: BroadcastActionState, formD
 
   const result = await createOutput({
     name: requireString(formData, "name"),
-    playlistId: requireString(formData, "playlistId"),
   });
   if (!result.success) return { error: result.error.message };
 
@@ -495,6 +522,76 @@ export async function resetOutputPinAttemptsAction(_prevState: BroadcastActionSt
   return { error: null };
 }
 
+// Dayparting — substitui o conjunto inteiro de faixas de horário desta tela. slots chega como JSON
+// num campo hidden (mesmo padrão de userIds/outputIds das outras actions de "reenviar a lista").
+export async function setOutputPlaylistScheduleAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(formData.get("slots") ?? "[]"));
+  } catch {
+    return { error: "Programação inválida." };
+  }
+  if (!Array.isArray(parsed)) return { error: "Programação inválida." };
+
+  const result = await setOutputPlaylistSchedule({
+    outputId: requireString(formData, "outputId"),
+    slots: (parsed as unknown[]).map((raw) => {
+      const slot = (raw ?? {}) as Record<string, unknown>;
+      return {
+        playlistId: String(slot.playlistId ?? ""),
+        days: Number(slot.days ?? 0),
+        startMinute: Number(slot.startMinute ?? 0),
+        endMinute: Number(slot.endMinute ?? 0),
+      };
+    }),
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// Manda a(s) TV(s) desta tela recarregarem — a TV reage via SSE (evento "reload"), nada muda no
+// admin, então sem revalidatePath.
+export async function reloadOutputAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await reloadOutput({ outputId: requireString(formData, "outputId") });
+  if (!result.success) return { error: result.error.message };
+
+  return { error: null };
+}
+
+// Gera um token novo pra tela — o link antigo para de funcionar. O card mostra o link novo
+// (revalidatePath: o token faz parte de BroadcastOutputRecord, então o card remonta com o valor
+// novo via `key`).
+export async function rotateOutputTokenAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await rotateOutputToken({ outputId: requireString(formData, "outputId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// "Duplicar tela" — cria "Cópia de X" com playlist dedicada, itens e ajustes de exibição copiados
+// (sem token/PIN/responsáveis/vínculos/programação). Estrutural → revalidatePath.
+export async function duplicateOutputAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await duplicateOutput({ outputId: requireString(formData, "outputId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
 export async function deleteOutputAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
@@ -519,6 +616,23 @@ export async function setOutputEditorsAction(_prevState: BroadcastActionState, f
   }
 
   const result = await setOutputEditors({ outputId, userIds });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// "Delegar a tela inteira" (atalho) — grava a pessoa como responsável da tela + playlist(s) que
+// ela toca + agenda(s) vinculadas de uma vez. mode "grant" adiciona, "revoke" remove das três.
+// O ajuste fino recurso a recurso continua nos set-*-editors acima.
+export async function delegateOutputAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await delegateOutput({
+    outputId: requireString(formData, "outputId"),
+    userId: requireString(formData, "userId"),
+    mode: requireString(formData, "mode") === "revoke" ? "revoke" : "grant",
+  });
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -854,4 +968,41 @@ export async function getConnectedOutputIpsAction(): Promise<Record<string, stri
 
   const result = await listConnectedOutputIps();
   return result.success ? result.data : {};
+}
+
+// Tokens com bloqueio de PIN ativo agora — mesmo poll/cadência do de IPs conectados. Lista vazia
+// em qualquer erro (plugin off, sem sessão de admin).
+export async function getOutputPinBlocksAction(): Promise<string[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await listOutputPinBlocks();
+  return result.success ? result.data : [];
+}
+
+// Saúde da pasta de vídeos — chamado uma vez ao abrir a aba Playlists. null em qualquer erro.
+export async function getVideosFolderHealthAction(): Promise<VideosFolderHealth | null> {
+  if (!(await isPluginActive("broadcast"))) return null;
+
+  const result = await inspectVideosFolder();
+  return result.success ? result.data : null;
+}
+
+// Telemetria das TVs por token (viewport/navegador/status/uptime) — mesmo poll/cadência do de IPs
+// conectados. {} em qualquer erro.
+export async function getOutputTelemetryAction(): Promise<Record<string, OutputBeaconSummary[]>> {
+  if (!(await isPluginActive("broadcast"))) return {};
+
+  const result = await listOutputTelemetry();
+  return result.success ? result.data : {};
+}
+
+// Sonda best-effort "este site carrega dentro de um iframe na TV?" — chamada pelo formulário de
+// item "webpage" no blur da URL. null em qualquer erro (plugin off, sem acesso, URL vazia).
+export async function checkWebpageEmbeddableAction(
+  url: string,
+): Promise<{ embeddable: "yes" | "likely-blocked" | "unknown"; reason: string | null } | null> {
+  if (!(await isPluginActive("broadcast"))) return null;
+
+  const result = await checkWebpageEmbeddable({ url });
+  return result.success ? result.data : null;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import * as QRCode from "qrcode";
 import {
   Check,
   ChevronDown,
@@ -13,6 +14,8 @@ import {
   PanelRightOpen,
   Power,
   PowerOff,
+  QrCode,
+  RotateCw,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
@@ -28,19 +31,27 @@ import { Switch } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { ConfirmDeleteButton } from "./confirm-delete-form";
 import { ListDropdownBadge } from "./list-badge";
-// Importa direto de contracts/, nunca do barrel (@/plugins/broadcast) — mesmo racional de
-// playlists-section.tsx/agenda-section.tsx.
-import type { BroadcastOutputRecord, BroadcastPlaylistRecord } from "../../contracts/types";
+// Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
+// de playlists-section.tsx/agenda-section.tsx.
+import type { BroadcastOutputRecord, BroadcastPlaylistRecord, BroadcastPlaylistScheduleSlot } from "../../contracts/types";
+import type { OutputBeaconSummary } from "../../runtime/output-beacon";
+import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared/playlist-schedule";
 import { STATUS_BORDER_CLASSNAME, StatusBadge } from "./status-dot";
 import { outputItemStatus } from "./status";
 import {
   clearAlertAction,
   createOutputAction,
   deleteOutputAction,
+  duplicateOutputAction,
   getConnectedOutputIpsAction,
+  getOutputPinBlocksAction,
+  getOutputTelemetryAction,
   publishAlertAction,
+  reloadOutputAction,
   resetOutputPinAttemptsAction,
+  rotateOutputTokenAction,
   setOutputAgendaScheduleAction,
+  setOutputPlaylistScheduleAction,
   setOutputDrawerAction,
   setOutputFooterAction,
   setOutputOfflineAction,
@@ -59,20 +70,12 @@ const initialState: BroadcastActionState = { error: null };
 const outputToggleInitialState: BroadcastOutputToggleState = { error: null, output: null };
 const playlistInitialState: SetOutputPlaylistState = { error: null, playlistId: null };
 
-// Toda saída nasce com sua cena/camadas fixas já prontas (vídeo + agenda + aviso rápido) — não há
-// mais o que escolher além do nome e da playlist que toca (pedido explícito: "não vamos precisar
-// configurar manualmente as camadas, você já define isso").
-function CreateOutputForm({ playlists }: { playlists: BroadcastPlaylistRecord[] }) {
+// Toda saída nasce com sua cena/camadas fixas já prontas (vídeo + agenda + aviso rápido) E com a
+// própria playlist dedicada ("Playlist da <tela>", modelo 1:1 — ver create-output/store.ts). O
+// operador só dá o nome; a playlist já vem junto, pronta pra receber itens na aba Playlists.
+function CreateOutputForm() {
   const [state, formAction, pending] = useActionState(createOutputAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Saída criada." });
-
-  if (playlists.length === 0) {
-    return (
-      <p className="rounded-panel border border-border bg-card p-3 text-sm text-warning">
-        Crie uma playlist na aba &quot;Playlists&quot; antes de criar uma saída.
-      </p>
-    );
-  }
+  useActionToast({ pending, error: state.error, successMessage: "Tela criada — a playlist dela já foi criada junto." });
 
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2 rounded-panel border border-border bg-card p-3">
@@ -80,18 +83,7 @@ function CreateOutputForm({ playlists }: { playlists: BroadcastPlaylistRecord[] 
         <label className="text-xs text-muted-foreground" htmlFor="output-name">Nome</label>
         <Input id="output-name" name="name" placeholder="TV da recepção" required className="w-56" />
       </div>
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground" htmlFor="output-playlist">Playlist</label>
-        <Select name="playlistId" required>
-          <SelectTrigger id="output-playlist" className="w-56"><SelectValue placeholder="Escolha uma playlist..." /></SelectTrigger>
-          <SelectContent>
-            {playlists.map((playlist) => (
-              <SelectItem key={playlist.id} value={playlist.id}>{playlist.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <Button type="submit" disabled={pending}>Nova saída</Button>
+      <Button type="submit" disabled={pending}>Nova tela</Button>
     </form>
   );
 }
@@ -155,6 +147,44 @@ function CopyOutputUrlButton({ token }: { token: string }) {
       {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
       {copied ? "Link copiado" : "Copiar link da TV"}
     </Button>
+  );
+}
+
+// QR code do link da TV — digitar `http://192.168.x.x/broadcast/out/recepcao` num controle remoto
+// de TV é o passo mais penoso do fluxo. Com o QR, aponta a câmera do celular (ou um leitor na
+// própria TV) e abre. Gera sob demanda no primeiro "abrir" (o `qrcode` roda no browser e devolve
+// um PNG data URL) — mesmo URL que o botão de copiar usa, pra não divergir.
+function OutputQrToggle({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const path = `/broadcast/out/${token}`;
+  const fullUrl = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+
+  useEffect(() => {
+    if (!open || dataUrl) return;
+    QRCode.toDataURL(fullUrl, { width: 320, margin: 1 })
+      .then(setDataUrl)
+      .catch(() => setDataUrl(null));
+  }, [open, dataUrl, fullUrl]);
+
+  return (
+    <div className="w-full space-y-2">
+      <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setOpen((previous) => !previous)}>
+        <QrCode className="size-4" />
+        {open ? "Ocultar QR code" : "QR code da TV"}
+      </Button>
+      {open && (
+        <div className="flex flex-col items-center gap-1.5 rounded-panel border border-border bg-card p-3">
+          {dataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- data URL local gerado no client, sem otimização de next/image
+            <img src={dataUrl} alt="QR code do link da TV" className="size-40" />
+          ) : (
+            <p className="text-xs text-muted-foreground">Gerando…</p>
+          )}
+          <p className="break-all text-center text-xs text-muted-foreground">{fullUrl}</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -523,6 +553,164 @@ function SetOutputAgendaScheduleForm({ output }: { output: BroadcastOutputRecord
   );
 }
 
+// Dayparting — faixas "de tal hora a tal hora, nestes dias, toca ESTA playlist". Quando um slot
+// casa com "agora" (na hora de parede da instituição), a tela troca pra playlist do slot; fora de
+// qualquer slot, volta pra playlist padrão da camada de vídeo. Substitui o conjunto inteiro de
+// uma vez (setOutputPlaylistScheduleAction), mesmo padrão de "reenviar a lista" das outras seções.
+type ScheduleSlotDraft = { days: number; startTime: string; endTime: string; playlistId: string };
+
+function slotToDraft(slot: BroadcastPlaylistScheduleSlot): ScheduleSlotDraft {
+  return {
+    days: slot.days,
+    startTime: minutesToTimeLabel(slot.startMinute),
+    endTime: minutesToTimeLabel(slot.endMinute),
+    playlistId: slot.playlistId,
+  };
+}
+
+function OutputScheduleSection({
+  output,
+  playlists,
+  slots: serverSlots,
+}: {
+  output: BroadcastOutputRecord;
+  playlists: BroadcastPlaylistRecord[];
+  slots: BroadcastPlaylistScheduleSlot[];
+}) {
+  const [drafts, setDrafts] = useState<ScheduleSlotDraft[]>(() => serverSlots.map(slotToDraft));
+  const formRef = useRef<HTMLFormElement>(null);
+  const jsonRef = useRef<HTMLInputElement>(null);
+  const [state, formAction, pending] = useActionState(setOutputPlaylistScheduleAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Programação salva." });
+
+  // Mesma regra do seletor de playlist do card: só a dedicada desta tela + compartilhadas.
+  const selectablePlaylists = playlists.filter(
+    (playlist) => !playlist.ownerOutputId || playlist.ownerOutputId === output.id,
+  );
+
+  function patch(index: number, next: Partial<ScheduleSlotDraft>) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...next } : draft)));
+  }
+  function toggleDay(index: number, bit: number) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, days: draft.days ^ bit } : draft)));
+  }
+  function addSlot() {
+    setDrafts((current) => [
+      ...current,
+      { days: 0b0111110, startTime: "08:00", endTime: "12:00", playlistId: selectablePlaylists[0]?.id ?? "" },
+    ]);
+  }
+  function removeSlot(index: number) {
+    setDrafts((current) => current.filter((_, i) => i !== index));
+  }
+
+  function save() {
+    const serialized = drafts.map((draft) => ({
+      playlistId: draft.playlistId,
+      days: draft.days,
+      startMinute: parseTimeToMinutes(draft.startTime) ?? -1,
+      endMinute: parseTimeToMinutes(draft.endTime) ?? -1,
+    }));
+    if (jsonRef.current) jsonRef.current.value = JSON.stringify(serialized);
+    formRef.current?.requestSubmit();
+  }
+
+  const playlistNameById = new Map(playlists.map((playlist) => [playlist.id, playlist.name]));
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Programação por horário</p>
+        <p className="text-xs text-muted-foreground">
+          Em cada faixa, a tela troca pra playlist escolhida. Fora de qualquer faixa, toca a playlist padrão. Horário da instituição.
+        </p>
+      </div>
+
+      <form ref={formRef} action={formAction} className="hidden">
+        <input type="hidden" name="outputId" value={output.id} />
+        <input type="hidden" name="slots" ref={jsonRef} defaultValue="[]" />
+      </form>
+
+      {drafts.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Sem programação — esta tela toca sempre a playlist padrão.</p>
+      ) : (
+        <div className="space-y-2">
+          {drafts.map((draft, index) => (
+            <div key={index} className="space-y-2 rounded-panel border border-border bg-card p-2.5">
+              <div className="flex flex-wrap gap-1">
+                {DAY_LABELS.map((label, dayIndex) => {
+                  const bit = 1 << dayIndex;
+                  const on = (draft.days & bit) !== 0;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => toggleDay(index, bit)}
+                      className={`rounded-full border px-2 py-0.5 text-xs ${
+                        on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="time"
+                  value={draft.startTime}
+                  onChange={(event) => patch(index, { startTime: event.target.value })}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <input
+                  type="time"
+                  value={draft.endTime}
+                  onChange={(event) => patch(index, { endTime: event.target.value })}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSlot(index)}
+                  aria-label="Remover faixa"
+                  className="ml-auto"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+              <Select value={draft.playlistId} onValueChange={(value) => patch(index, { playlistId: value })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Escolha a playlist desta faixa...">
+                    {playlistNameById.get(draft.playlistId) ?? "Escolha a playlist desta faixa..."}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {selectablePlaylists.map((playlist) => (
+                    <SelectItem key={playlist.id} value={playlist.id}>
+                      {playlist.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={addSlot} disabled={selectablePlaylists.length === 0}>
+          Adicionar faixa
+        </Button>
+        <Button type="button" size="sm" onClick={save} disabled={pending}>
+          Salvar programação
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // Agrupa os três liga/desliga de camada numa única lista — pedido explícito: "crie contexto:
 // botões de abrir/fechar e ativar/desativar" (antes, agenda ficava solta no corpo do card e
 // rodapé/ticker ficavam escondidos dentro de "Mais opções", sem nada explicando que os três são a
@@ -577,8 +765,8 @@ function OutputLayersSection({ output }: { output: BroadcastOutputRecord }) {
           checked={output.tickerEnabled}
           iconOn={<ScrollText className="size-4" />}
           iconOff={<ScrollText className="size-4" />}
-          label="Ticker"
-          description="Texto da agenda rolando no rodapé"
+          label="Faixa de eventos"
+          description="Próximos eventos rolando no rodapé"
           tone="warning"
         />
       </div>
@@ -586,17 +774,17 @@ function OutputLayersSection({ output }: { output: BroadcastOutputRecord }) {
   );
 }
 
-// "Tela offline" (Fase 11) — chave mestra separada das camadas acima: liga uma tela de espera
-// branded no lugar do conteúdo inteiro, não é "mais uma camada". Reaproveita LayerToggleRow (mesmo
-// padrão otimista, sem revalidatePath — a TV troca via SSE), só numa lista própria com o rótulo/
-// contexto deixando claro o efeito (pedido explícito: "deixar claro o efeito na UI").
+// "Modo espera" (era "Tela offline", Fase 11) — chave mestra separada das camadas acima: liga uma
+// tela de espera branded no lugar do conteúdo inteiro, não é "mais uma camada". "Espera" em vez de
+// "offline" de propósito: é uma escolha do operador (pausar a exibição), não um defeito. Reaproveita
+// LayerToggleRow (mesmo padrão otimista, sem revalidatePath — a TV troca via SSE).
 function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
   return (
     <div className="space-y-2">
       <div>
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Exibição</p>
         <p className="text-xs text-muted-foreground">
-          Com a tela offline, a TV mostra uma tela de espera com a marca do site — não o conteúdo.
+          No modo espera, a TV mostra uma tela de pausa com a marca do site — não o conteúdo.
         </p>
       </div>
       <div className="overflow-hidden rounded-panel border border-border">
@@ -607,8 +795,8 @@ function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
           checked={output.offline}
           iconOn={<PowerOff className="size-4" />}
           iconOff={<Power className="size-4" />}
-          label="Tela offline"
-          description="Mostra uma tela de espera branded, não o conteúdo"
+          label="Modo espera"
+          description="Pausa a exibição e mostra uma tela de pausa branded"
           tone="warning"
         />
       </div>
@@ -698,6 +886,21 @@ function DeleteOutputButton({ outputId }: { outputId: string }) {
   );
 }
 
+// "Duplicar tela" — cria "Cópia de X" com playlist dedicada, itens e ajustes de exibição copiados
+// (sem token/PIN/responsáveis/vínculos/programação, ver features/outputs/duplicate-output).
+function DuplicateOutputButton({ outputId }: { outputId: string }) {
+  const [state, formAction, pending] = useActionState(duplicateOutputAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Tela duplicada." });
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="outputId" value={outputId} />
+      <Button type="submit" variant="ghost" size="icon" disabled={pending} aria-label="Duplicar tela">
+        <Copy className="size-4" />
+      </Button>
+    </form>
+  );
+}
+
 // Global (não por saída) — aparece em toda saída, e some sozinho quando a duração passa; "Remover
 // agora" força isso antes do tempo, se precisar.
 function QuickAlertPanel() {
@@ -779,26 +982,45 @@ function ConnectedTvsBadge({ connectedIps }: { connectedIps: string[] }) {
   );
 }
 
+// "no ar há 2 h" a partir dos segundos de uptime do beacon.
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return "menos de 1 min";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
+  return `${Math.round(seconds / 86400)} d`;
+}
+
 function OutputStatusRow({
   playlistName,
   agendaNames,
   connectedIps,
+  telemetry,
 }: {
   playlistName: string | null;
   agendaNames: string[];
   connectedIps: string[];
+  telemetry: OutputBeaconSummary[];
 }) {
   const status = outputItemStatus(Boolean(playlistName));
+  const primary = telemetry[0];
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <StatusBadge tone={status.tone}>{playlistName ? `Playlist: ${playlistName}` : status.label}</StatusBadge>
-      {agendaNames.length > 0 && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          {agendaNames.length} {agendaNames.length === 1 ? "agenda" : "agendas"}
-        </span>
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge tone={status.tone}>{playlistName ? `Playlist: ${playlistName}` : status.label}</StatusBadge>
+        {agendaNames.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {agendaNames.length} {agendaNames.length === 1 ? "agenda" : "agendas"}
+          </span>
+        )}
+        <ConnectedTvsBadge connectedIps={connectedIps} />
+      </div>
+      {primary && (
+        <p className="text-xs text-muted-foreground">
+          {primary.viewport.replace("x", "×")} · {primary.browser} · no ar há {formatUptime(primary.uptimeSeconds)}
+          {telemetry.length > 1 ? ` · +${telemetry.length - 1}` : ""}
+        </p>
       )}
-      <ConnectedTvsBadge connectedIps={connectedIps} />
     </div>
   );
 }
@@ -809,7 +1031,7 @@ function OutputStatusRow({
 // mesmo racional de status.ts: verde quando protegida, âmbar quando qualquer um com o link abre a
 // tela — o mesmo sinal "precisa de atenção" já usado nos badges de status, aqui em escala de card
 // inteiro em vez de badge pequeno.
-function OutputPinSection({ output }: { output: BroadcastOutputRecord }) {
+function OutputPinSection({ output, pinBlocked = false }: { output: BroadcastOutputRecord; pinBlocked?: boolean }) {
   // Estado otimista do PIN — sem revalidatePath, o painel reflete criar/trocar/remover na hora
   // (SetOutputPinForm.onSaved / RemoveOutputPinButton.onRemoved). Revalidação estrutural remonta
   // via `key` no OutputCard.
@@ -839,6 +1061,11 @@ function OutputPinSection({ output }: { output: BroadcastOutputRecord }) {
               : "Qualquer pessoa com o link abre esta tela. Considere proteger com um PIN."}
           </p>
         </div>
+        {pinBlocked && (
+          <p className="text-xs font-medium text-warning">
+            Há tentativas de PIN bloqueadas nesta tela agora — se for uma TV legítima presa no limite, libere abaixo.
+          </p>
+        )}
         <SetOutputPinForm output={output} isProtected={isProtected} onSaved={setPin} />
         {isProtected && <ResetOutputPinAttemptsButton outputId={output.id} />}
       </div>
@@ -864,6 +1091,24 @@ function ResetOutputPinAttemptsButton({ outputId }: { outputId: string }) {
   );
 }
 
+// "Recarregar a TV agora" — publica o evento SSE "reload" (a TV faz location.reload() sozinha, ver
+// output-canvas.tsx). Pra quando uma TV bugou e ninguém quer ir lá fisicamente. Não é destrutivo,
+// submit direto sem AlertDialog. Gate no handler (broadcast.manage OU outputs.manage + atribuição).
+function ReloadOutputButton({ outputId }: { outputId: string }) {
+  const [state, formAction, pending] = useActionState(reloadOutputAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Sinal de recarregar enviado à TV." });
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="outputId" value={outputId} />
+      <Button type="submit" size="sm" variant="outline" disabled={pending} className="w-full sm:w-auto">
+        <RotateCw className="size-4" />
+        Recarregar a TV agora
+      </Button>
+    </form>
+  );
+}
+
 // Um poll só pra todas as telas juntas (não um por card) — pedido explícito: "mostra também a
 // quantidade de TVs conectadas" + "quero poder saber qual é a TV que conectou". A leitura em si é
 // só um Map lido em memória (ver getConnectedOutputIps, runtime/output-bus.ts), então um intervalo
@@ -871,16 +1116,26 @@ function ResetOutputPinAttemptsButton({ outputId }: { outputId: string }) {
 // visível (evita poll com o admin em segundo plano).
 const CONNECTED_IPS_POLL_MS = 5000;
 
-function useConnectedOutputIps(): Record<string, string[]> {
-  const [ipsByToken, setIpsByToken] = useState<Record<string, string[]>>({});
+type OutputLiveStatus = {
+  ipsByToken: Record<string, string[]>;
+  blockedTokens: Set<string>;
+  telemetryByToken: Record<string, OutputBeaconSummary[]>;
+};
+
+function useOutputLiveStatus(): OutputLiveStatus {
+  const [status, setStatus] = useState<OutputLiveStatus>({ ipsByToken: {}, blockedTokens: new Set(), telemetryByToken: {} });
 
   useEffect(() => {
     let cancelled = false;
 
     async function poll() {
       if (document.visibilityState !== "visible") return;
-      const result = await getConnectedOutputIpsAction();
-      if (!cancelled) setIpsByToken(result);
+      const [ipsByToken, blocked, telemetryByToken] = await Promise.all([
+        getConnectedOutputIpsAction(),
+        getOutputPinBlocksAction(),
+        getOutputTelemetryAction(),
+      ]);
+      if (!cancelled) setStatus({ ipsByToken, blockedTokens: new Set(blocked), telemetryByToken });
     }
 
     poll();
@@ -893,7 +1148,7 @@ function useConnectedOutputIps(): Record<string, string[]> {
     };
   }, []);
 
-  return ipsByToken;
+  return status;
 }
 
 // Card fechável — pedido explícito: "o card de tela pode 'fechar', esconder todas as informações
@@ -909,6 +1164,9 @@ function OutputCard({
   currentPlaylistId,
   agendaNames,
   connectedIps,
+  telemetry,
+  pinBlocked,
+  scheduleSlots,
   canManageAll,
 }: {
   output: BroadcastOutputRecord;
@@ -916,6 +1174,9 @@ function OutputCard({
   currentPlaylistId: string | null;
   agendaNames: string[];
   connectedIps: string[];
+  telemetry: OutputBeaconSummary[];
+  pinBlocked: boolean;
+  scheduleSlots: BroadcastPlaylistScheduleSlot[];
   canManageAll: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -925,6 +1186,12 @@ function OutputCard({
   const [playlistId, setPlaylistId] = useState(currentPlaylistId);
   const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
   const status = outputItemStatus(Boolean(playlistName));
+  // O seletor de troca de playlist só oferece: a playlist dedicada DESTA tela + playlists
+  // compartilhadas (sem tela dona). A playlist dedicada de OUTRA tela nunca aparece — apontar duas
+  // telas pra mesma playlist dedicada não faz sentido no modelo 1:1 (ver database/schema/index.ts).
+  const selectablePlaylists = playlists.filter(
+    (playlist) => !playlist.ownerOutputId || playlist.ownerOutputId === output.id,
+  );
 
   return (
     <Card className={`gap-3 border-l-4 ${STATUS_BORDER_CLASSNAME[status.tone]}`}>
@@ -941,10 +1208,16 @@ function OutputCard({
           >
             {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </Button>
+          {canManageAll && <DuplicateOutputButton outputId={output.id} />}
           {canManageAll && <DeleteOutputButton outputId={output.id} />}
         </CardAction>
         <div className="mt-1">
-          <OutputStatusRow playlistName={playlistName} agendaNames={agendaNames} connectedIps={connectedIps} />
+          <OutputStatusRow
+            playlistName={playlistName}
+            agendaNames={agendaNames}
+            connectedIps={connectedIps}
+            telemetry={telemetry}
+          />
         </div>
       </CardHeader>
       {/* Cada seção com rótulo + frase de contexto curta, separadas por divisor — pedido
@@ -954,14 +1227,22 @@ function OutputCard({
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Playlist</p>
-            <p className="text-xs text-muted-foreground">O que esta tela reproduz em sequência.</p>
+            <p className="text-xs text-muted-foreground">
+              Cada tela já tem a própria playlist — monte o conteúdo dela na aba Playlists. Troque aqui só pra apontar esta tela
+              pra uma playlist compartilhada.
+            </p>
             <SetOutputPlaylistForm
               output={output}
-              playlists={playlists}
+              playlists={selectablePlaylists}
               currentPlaylistId={playlistId}
               onPlaylistChange={setPlaylistId}
             />
           </div>
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputScheduleSection output={output} playlists={playlists} slots={scheduleSlots} />
+            </div>
+          )}
           <div className="border-t border-border/60 pt-4">
             <OutputStandbySection output={output} />
           </div>
@@ -969,7 +1250,12 @@ function OutputCard({
             <OutputLayersSection output={output} />
           </div>
           <div className="border-t border-border/60 pt-4">
-            <OutputPinSection output={output} />
+            <OutputPinSection output={output} pinBlocked={pinBlocked} />
+          </div>
+          <div className="border-t border-border/60 pt-4">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Manutenção</p>
+            <p className="mb-2 text-xs text-muted-foreground">Se a TV travou, mande ela recarregar sem ir até lá.</p>
+            <ReloadOutputButton outputId={output.id} />
           </div>
         </CardContent>
       )}
@@ -978,7 +1264,24 @@ function OutputCard({
           link, a ação mais comum do card inteiro; o fundo com tinta de primary reforça o mesmo
           sinal na seção inteira, não só no botão. */}
       <CardFooter className="border-t-primary/20 bg-primary/8">
-        <CopyOutputUrlButton token={output.token} />
+        <div className="w-full space-y-2">
+          <CopyOutputUrlButton token={output.token} />
+          <OutputQrToggle token={output.token} />
+          {canManageAll && (
+            <ConfirmDeleteButton
+              action={rotateOutputTokenAction}
+              fields={{ outputId: output.id }}
+              title="Gerar novo link"
+              description="Gerar um link novo para esta tela? O link atual para de funcionar na hora — você vai precisar reabrir o link novo em cada TV que usava o antigo."
+              confirmLabel="Gerar novo link"
+              successMessage="Link novo gerado."
+              icon={<RotateCw className="size-4" />}
+              label="Gerar novo link"
+              variant="ghost"
+              className="w-full"
+            />
+          )}
+        </div>
       </CardFooter>
     </Card>
   );
@@ -988,24 +1291,38 @@ export function OutputsSection({
   outputs,
   playlists,
   outputPlaylistById,
+  schedulesByOutputId = {},
   canManageAll = true,
   agendaNamesByOutputId = {},
 }: {
   outputs: BroadcastOutputRecord[];
   playlists: BroadcastPlaylistRecord[];
   outputPlaylistById: Record<string, string | null>;
+  schedulesByOutputId?: Record<string, BroadcastPlaylistScheduleSlot[]>;
   // false pra um ator sem broadcast.manage (só broadcast.outputs.manage — "responsável" por
   // telas específicas, ver page.tsx) — esconde aviso rápido e criar/apagar tela. Atribuição de
   // responsáveis nunca aparece aqui — é exclusiva do Superadmin, ver responsibles-section.tsx.
   canManageAll?: boolean;
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
-  const connectedIpsByToken = useConnectedOutputIps();
+  const { ipsByToken: connectedIpsByToken, blockedTokens, telemetryByToken } = useOutputLiveStatus();
 
   return (
     <div className="space-y-4">
       {canManageAll && <QuickAlertPanel />}
-      {canManageAll && <CreateOutputForm playlists={playlists} />}
+      {canManageAll && <CreateOutputForm />}
+      <p className="text-xs text-muted-foreground">
+        Novo na hora de ligar uma TV?{" "}
+        <a
+          href="/broadcast/setup"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+        >
+          Abrir o guia de configuração
+        </a>{" "}
+        (dá pra imprimir).
+      </p>
       {outputs.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {canManageAll ? "Nenhuma tela cadastrada ainda." : "Nenhuma tela foi atribuída a você ainda."}
@@ -1031,6 +1348,9 @@ export function OutputsSection({
             currentPlaylistId={outputPlaylistById[output.id] ?? null}
             agendaNames={agendaNamesByOutputId[output.id] ?? []}
             connectedIps={connectedIpsByToken[output.token] ?? []}
+            telemetry={telemetryByToken[output.token] ?? []}
+            pinBlocked={blockedTokens.has(output.token)}
+            scheduleSlots={schedulesByOutputId[output.id] ?? []}
             canManageAll={canManageAll}
           />
         ))}

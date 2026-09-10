@@ -24,5 +24,15 @@ export function validateUpdatePlaylistItemInput(input: UpdatePlaylistItemInput):
       message: 'Informe uma URL completa (https://...) ou uma rota interna começando com "/".',
     };
   }
+  if (
+    input.visibleFrom != null &&
+    input.visibleUntil != null &&
+    input.visibleUntil.getTime() <= input.visibleFrom.getTime()
+  ) {
+    return {
+      code: "broadcast.update-playlist-item.invalid_validity_window",
+      message: "O fim da validade precisa ser depois do início.",
+    };
+  }
   return null;
 }

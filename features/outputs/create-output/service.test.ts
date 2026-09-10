@@ -15,13 +15,13 @@ describe("createOutput", () => {
     createOutputWithDefaultScene.mockReset();
   });
 
-  it("trims the name and forwards the chosen playlist to the store", async () => {
+  it("trims the name and lets the store provision the dedicated playlist", async () => {
     createOutputWithDefaultScene.mockResolvedValue({ id: "o1", name: "TV da recepção", token: "tv-da-recepcao" });
 
     const { createOutput } = await import("./service");
-    const result = await createOutput({ name: "  TV da recepção  ", playlistId: "p1", actorId: "actor-1" });
+    const result = await createOutput({ name: "  TV da recepção  ", actorId: "actor-1" });
 
     expect(result).toEqual({ success: true, data: { id: "o1", name: "TV da recepção", token: "tv-da-recepcao" } });
-    expect(createOutputWithDefaultScene).toHaveBeenCalledWith({ name: "TV da recepção", playlistId: "p1" });
+    expect(createOutputWithDefaultScene).toHaveBeenCalledWith({ name: "TV da recepção" });
   });
 });

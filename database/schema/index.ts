@@ -56,6 +56,16 @@ export const broadcastPlaylists = broadcastSchema.table("playlists", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   folderPath: text("folder_path"),
+  // Playlist dedicada a UMA tela (modelo 1:1 — pedido explícito: "criar playlist dedicada por
+  // tela", em vez de uma playlist compartilhada por várias telas). Preenchido quando a playlist
+  // nasce junto com a saída (create-output/store.ts); null pra playlist "compartilhada" criada à
+  // mão em /admin/broadcast — o comportamento anterior continua suportado, tanto pra instalações
+  // que já tinham telas apontando pra playlists compartilhadas quanto pra quem, de propósito,
+  // aponta várias telas pra mesma playlist depois (setOutputPlaylist). FK real (mesmo plugin).
+  // onDelete "set null" é só rede de segurança: delete-output/store.ts resolve o id da playlist
+  // dedicada ANTES de apagar a tela e apaga as duas na mesma transação (o set null zeraria a
+  // coluna antes de dar pra achar a playlist por owner_output_id).
+  ownerOutputId: text("owner_output_id").references(() => broadcastOutputs.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -97,6 +107,14 @@ export const broadcastPlaylistItems = broadcastSchema.table(
     // com som (ex: Chrome `--autoplay-policy=no-user-gesture-required`); se o navegador bloquear, o
     // vídeo cai pra reprodução muda pra não travar a playlist (ver layer-renderer.tsx).
     withAudio: boolean("with_audio").notNull().default(false),
+    // Janela de validade opcional — o item só entra na reprodução da TV entre visible_from e
+    // visible_until. Ambos null (padrão) = sempre visível; pedido explícito: "este vídeo de fim de
+    // ano só aparece até 25/12". Timestamp completo, hora de parede da instituição convertida pra
+    // UTC no admin (mesmo tratamento de startAt de evento de agenda). O item NÃO é apagado fora da
+    // janela — só some da reprodução, igual ao `hidden`. Filtro em get-output-state/store.ts
+    // (findVisiblePlaylistItemsByPlaylistId).
+    visibleFrom: timestamp("visible_from", { withTimezone: true }),
+    visibleUntil: timestamp("visible_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -268,6 +286,27 @@ export const broadcastOutputs = broadcastSchema.table(
   },
   (table) => [uniqueIndex("broadcast_outputs_token_idx").on(table.token)],
 );
+
+// "Dayparting" — programação por horário/dia da semana: quando um slot casa com "agora" (na hora
+// de parede da instituição, broadcast.timezone), a tela toca a playlist deste slot NO LUGAR da
+// playlist padrão da camada de vídeo (config.playlistId). Sem slot casando, cai na padrão — o
+// comportamento anterior. Resolvido em get-output-state (shared/playlist-schedule.ts é a helper
+// pura). `days` é um bitmask: bit 0 = domingo ... bit 6 = sábado. start_minute/end_minute são
+// minutos desde a meia-noite (0–1439), fim exclusivo, sem cruzar meia-noite (o admin quebra "22h
+// às 2h" em dois slots). Ambas as FKs cascade — apagar a tela ou a playlist limpa o slot.
+export const broadcastOutputPlaylistSchedule = broadcastSchema.table("output_playlist_schedule", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  outputId: text("output_id")
+    .notNull()
+    .references(() => broadcastOutputs.id, { onDelete: "cascade" }),
+  playlistId: text("playlist_id")
+    .notNull()
+    .references(() => broadcastPlaylists.id, { onDelete: "cascade" }),
+  days: integer("days").notNull(),
+  startMinute: integer("start_minute").notNull(),
+  endMinute: integer("end_minute").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Vínculo agenda↔saída — modelo "opt-in": uma agenda SEM nenhuma linha aqui não aparece em
 // NENHUMA saída; só entra no rodízio de uma saída específica quando existe uma linha ligando as

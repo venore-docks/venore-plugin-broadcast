@@ -43,6 +43,9 @@ export type BroadcastPlaylistRecord = {
   // Pasta (relativa à raiz configurada em broadcast.rootFolder) varrida pelo scan — null quando a
   // playlist só tem itens do tipo "media-asset"/"webpage".
   folderPath: string | null;
+  // Id da tela dona desta playlist (modelo 1:1 — ver database/schema/index.ts). null = playlist
+  // "compartilhada" criada à mão, sem tela dona.
+  ownerOutputId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -85,6 +88,10 @@ export type BroadcastPlaylistItemRecord = {
   // Só relevante pra item de vídeo e "webpage" — toca o áudio na view em vez de sair mudo. Ver
   // o comentário da coluna with_audio em database/schema/index.ts.
   withAudio: boolean;
+  // Janela de validade opcional (ver database/schema/index.ts) — o item só entra na reprodução
+  // entre os dois; null/null = sempre visível.
+  visibleFrom: Date | null;
+  visibleUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -140,6 +147,18 @@ export type BroadcastAgendaEventRecord = {
   extraDates: BroadcastAgendaEventDate[];
   createdAt: Date;
   updatedAt: Date;
+};
+
+// Um slot de dayparting de uma tela (ver broadcastOutputPlaylistSchedule em
+// database/schema/index.ts). days: bitmask, bit 0 = domingo ... bit 6 = sábado. start/end em
+// minutos desde a meia-noite (0–1439), fim exclusivo, sem cruzar meia-noite.
+export type BroadcastPlaylistScheduleSlot = {
+  id: string;
+  outputId: string;
+  playlistId: string;
+  days: number;
+  startMinute: number;
+  endMinute: number;
 };
 
 // Aviso rápido (lower third / alerta) — no máximo um ativo por vez, expira sozinho (ver schema).
@@ -251,6 +270,9 @@ export type RegionNewsArticle = {
 // output-canvas.tsx), então basta sinalizar "algo mudou, rebusque". "alert-changed" é global (o
 // alerta não é por saída) — publicado pra todos os tokens; "playlist-changed" é publicado só pro
 // token da saída afetada.
+// "reload" — o admin manda a TV recarregar a página (útil quando uma TV bugou e ninguém quer ir
+// lá fisicamente). O cliente da view faz window.location.reload() ao receber; sem payload. É o
+// único evento que NÃO é "algo mudou, rebusque o estado" — é uma ordem de recarregar.
 export type BroadcastOutputEvent =
   | { type: "scene-changed"; sceneId: string | null }
   | { type: "drawer-changed"; drawerOpen: boolean }
@@ -259,4 +281,5 @@ export type BroadcastOutputEvent =
   | { type: "agenda-schedule-changed"; agendaOpenSeconds: number | null; agendaPauseSeconds: number | null }
   | { type: "offline-changed"; offline: boolean }
   | { type: "alert-changed" }
-  | { type: "playlist-changed" };
+  | { type: "playlist-changed" }
+  | { type: "reload" };

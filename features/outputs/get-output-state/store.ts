@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
 import { db } from "@venore/plugin-sdk";
 import {
   broadcastAgendaEventDates,
@@ -7,6 +7,7 @@ import {
   broadcastAlerts,
   broadcastLayers,
   broadcastOutputAgendas,
+  broadcastOutputPlaylistSchedule,
   broadcastOutputs,
   broadcastPlaylistItems,
   broadcastScenes,
@@ -71,12 +72,40 @@ export async function findLayersBySceneId(sceneId: string): Promise<BroadcastLay
 // garantida) — isso fazia o índice de rotação do client (PlaylistLayer) apontar pra um item
 // diferente do que apontava antes depois de um refetch de estado, "pulando"/travando a playlist.
 export async function findVisiblePlaylistItemsByPlaylistId(playlistId: string): Promise<BroadcastPlaylistItemRecord[]> {
+  // Além de `hidden`, respeita a janela de validade opcional (visible_from/visible_until) — o item
+  // some da reprodução fora dela sem ser apagado (ver database/schema/index.ts). "now" é o instante
+  // da resolução do estado; a próxima resincronização da TV (SSE/poll) reavalia.
+  const now = new Date();
   const rows = await db
     .select()
     .from(broadcastPlaylistItems)
-    .where(and(eq(broadcastPlaylistItems.playlistId, playlistId), eq(broadcastPlaylistItems.hidden, false)))
+    .where(
+      and(
+        eq(broadcastPlaylistItems.playlistId, playlistId),
+        eq(broadcastPlaylistItems.hidden, false),
+        or(isNull(broadcastPlaylistItems.visibleFrom), lte(broadcastPlaylistItems.visibleFrom, now)),
+        or(isNull(broadcastPlaylistItems.visibleUntil), gte(broadcastPlaylistItems.visibleUntil, now)),
+      ),
+    )
     .orderBy(asc(broadcastPlaylistItems.order), asc(broadcastPlaylistItems.createdAt), asc(broadcastPlaylistItems.id));
   return rows as BroadcastPlaylistItemRecord[];
+}
+
+// Slots de dayparting desta tela (ver shared/playlist-schedule.ts) — a resolução de "qual casa
+// agora" acontece no service, aqui só a leitura.
+export async function findPlaylistScheduleForOutput(
+  outputId: string,
+): Promise<{ playlistId: string; days: number; startMinute: number; endMinute: number }[]> {
+  return db
+    .select({
+      playlistId: broadcastOutputPlaylistSchedule.playlistId,
+      days: broadcastOutputPlaylistSchedule.days,
+      startMinute: broadcastOutputPlaylistSchedule.startMinute,
+      endMinute: broadcastOutputPlaylistSchedule.endMinute,
+    })
+    .from(broadcastOutputPlaylistSchedule)
+    .where(eq(broadcastOutputPlaylistSchedule.outputId, outputId))
+    .orderBy(asc(broadcastOutputPlaylistSchedule.startMinute), asc(broadcastOutputPlaylistSchedule.createdAt));
 }
 
 // Mesmo racional de desempate de findVisiblePlaylistItemsByPlaylistId acima.

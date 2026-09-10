@@ -27,7 +27,12 @@ export {
 export { deletePlaylistItemHandler as deletePlaylistItem } from "./features/playlists/delete-playlist-item/handler";
 export { deletePlaylistHandler as deletePlaylist } from "./features/playlists/delete-playlist/handler";
 export type { DeletePlaylistInput, DeletePlaylistResult } from "./features/playlists/delete-playlist/types";
+export { duplicatePlaylistHandler as duplicatePlaylist } from "./features/playlists/duplicate-playlist/handler";
+export type { DuplicatePlaylistInput, DuplicatePlaylistResult } from "./features/playlists/duplicate-playlist/types";
 export { scanPlaylistFolderHandler as scanPlaylistFolder } from "./features/playlists/scan-playlist-folder/handler";
+// Saúde da pasta compartilhada de vídeos — selo na aba Playlists.
+export { inspectVideosFolderHandler as inspectVideosFolder } from "./features/playlists/inspect-videos-folder/handler";
+export type { InspectVideosFolderResult, VideosFolderHealth } from "./features/playlists/inspect-videos-folder/types";
 // Sem authorizeActor (ver o próprio handler) — só a rota de stream (app/api/broadcast/stream)
 // chama isto, nunca uma action de UI autenticada por sessão de admin.
 export {
@@ -55,6 +60,16 @@ export type {
   AddWebpagePlaylistItemInput,
   AddWebpagePlaylistItemResult,
 } from "./features/playlists/add-webpage-playlist-item/types";
+// Sonda best-effort "este site carrega dentro de um iframe na TV?" — só aviso antecipado, não
+// bloqueia adicionar. Ver features/playlists/check-webpage-embeddable.
+export {
+  checkWebpageEmbeddableHandler as checkWebpageEmbeddable,
+} from "./features/playlists/check-webpage-embeddable/handler";
+export type {
+  CheckWebpageEmbeddableInput,
+  CheckWebpageEmbeddableResult,
+  WebpageEmbeddable,
+} from "./features/playlists/check-webpage-embeddable/types";
 // Atalho "Painel de métricas" — só funciona com o plugin company-metrics ativo (§9.3).
 export {
   addMetricsBoardPlaylistItemHandler as addMetricsBoardPlaylistItem,
@@ -98,6 +113,11 @@ export type {
   AddScannedPlaylistItemsInput,
   AddScannedPlaylistItemsResult,
 } from "./features/playlists/add-scanned-playlist-items/types";
+// Upload de vídeo pra pasta compartilhada — chamado só pela rota app/api/broadcast/upload (o
+// arquivo já está no disco quando isto roda; ver features/playlists/upload-local-video e
+// runtime/upload-storage). Gate: broadcast.manage OU broadcast.playlists.manage + atribuição.
+export { uploadLocalVideoHandler as uploadLocalVideo } from "./features/playlists/upload-local-video/handler";
+export type { UploadLocalVideoInput, UploadLocalVideoResult } from "./features/playlists/upload-local-video/types";
 export {
   togglePlaylistItemVisibilityHandler as togglePlaylistItemVisibility,
 } from "./features/playlists/toggle-playlist-item-visibility/handler";
@@ -171,12 +191,26 @@ export type {
 export { verifyOutputPinHandler as verifyOutputPin } from "./features/outputs/verify-output-pin/handler";
 export { deleteOutputHandler as deleteOutput } from "./features/outputs/delete-output/handler";
 export type { DeleteOutputInput, DeleteOutputResult } from "./features/outputs/delete-output/types";
+export { duplicateOutputHandler as duplicateOutput } from "./features/outputs/duplicate-output/handler";
+export type { DuplicateOutputInput, DuplicateOutputResult } from "./features/outputs/duplicate-output/types";
 // "Responsável" por uma saída — só broadcast.manage decide quem é (mesmo racional de
 // set-agenda-editors, ver shared/scoped-authorization/index.ts).
 export { setOutputEditorsHandler as setOutputEditors } from "./features/outputs/set-output-editors/handler";
 export { listOutputEditorsHandler as listOutputEditors } from "./features/outputs/list-output-editors/handler";
 export type { SetOutputEditorsInput, SetOutputEditorsResult } from "./features/outputs/set-output-editors/types";
 export type { ListOutputEditorsResult } from "./features/outputs/list-output-editors/types";
+// "Delegar a tela inteira" — atribui/remove uma pessoa como responsável da tela + playlist(s) que
+// ela toca + agenda(s) vinculadas, numa ação só (gate broadcast.manage). Ajuste fino por recurso
+// continua nos set-*-editors acima.
+export { delegateOutputHandler as delegateOutput } from "./features/outputs/delegate-output/handler";
+export type { DelegateOutputInput, DelegateOutputResult, DelegateOutputMode } from "./features/outputs/delegate-output/types";
+// Manda a(s) TV(s) desta tela recarregarem (evento SSE "reload") — gate igual aos outros
+// controles ao vivo (broadcast.manage OU broadcast.outputs.manage + atribuição).
+export { reloadOutputHandler as reloadOutput } from "./features/outputs/reload-output/handler";
+export type { ReloadOutputInput, ReloadOutputResult } from "./features/outputs/reload-output/types";
+// Gera um token novo pra tela (o link antigo morre). Mesmo gate dos controles ao vivo.
+export { rotateOutputTokenHandler as rotateOutputToken } from "./features/outputs/rotate-output-token/handler";
+export type { RotateOutputTokenInput, RotateOutputTokenResult } from "./features/outputs/rotate-output-token/types";
 // Sem authorizeActor (ver o próprio handler) — acesso por token, chamado pela página de saída
 // (server component) e pela rota SSE, nunca por uma action de UI autenticada por sessão de admin.
 export { getOutputStateHandler as getOutputState } from "./features/outputs/get-output-state/handler";
@@ -184,6 +218,24 @@ export { getOutputStateHandler as getOutputState } from "./features/outputs/get-
 // o Map em memória de runtime/output-bus; usado pelo poll do admin em outputs-section.tsx.
 export { listConnectedOutputIpsHandler as listConnectedOutputIps } from "./features/outputs/list-connected-output-ips/handler";
 export type { ListConnectedOutputIpsResult } from "./features/outputs/list-connected-output-ips/types";
+// Tokens com bloqueio de tentativa de PIN ativo agora — mesmo poll/gate do de IPs conectados.
+export { listOutputPinBlocksHandler as listOutputPinBlocks } from "./features/outputs/list-output-pin-blocks/handler";
+export type { ListOutputPinBlocksResult } from "./features/outputs/list-output-pin-blocks/types";
+// Telemetria das TVs (viewport/navegador/status/uptime), reportada via beacon — mesmo poll/gate.
+export { listOutputTelemetryHandler as listOutputTelemetry } from "./features/outputs/list-output-telemetry/handler";
+export type { ListOutputTelemetryResult } from "./features/outputs/list-output-telemetry/types";
+export type { OutputBeaconSummary } from "./runtime/output-beacon";
+// Dayparting — programação de playlist por horário/dia da semana, por tela. get-output-state lê os
+// slots direto do store dele; estes são pro admin (set = editar, list = loader da página).
+export { setOutputPlaylistScheduleHandler as setOutputPlaylistSchedule } from "./features/outputs/set-output-playlist-schedule/handler";
+export { listOutputPlaylistSchedulesHandler as listOutputPlaylistSchedules } from "./features/outputs/list-output-playlist-schedules/handler";
+export type {
+  SetOutputPlaylistScheduleInput,
+  SetOutputPlaylistScheduleResult,
+  OutputPlaylistScheduleSlotInput,
+} from "./features/outputs/set-output-playlist-schedule/types";
+export type { ListOutputPlaylistSchedulesResult } from "./features/outputs/list-output-playlist-schedules/types";
+export type { BroadcastPlaylistScheduleSlot } from "./contracts/types";
 
 export type { CreateOutputInput, CreateOutputResult } from "./features/outputs/create-output/types";
 export type { ListOutputsResult } from "./features/outputs/list-outputs/types";

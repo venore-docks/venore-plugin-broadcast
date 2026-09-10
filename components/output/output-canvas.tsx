@@ -30,6 +30,13 @@ const FALLBACK_POLL_MS = 15_000;
 const DISCONNECT_CHECK_MS = 5_000;
 const DISCONNECTED_AFTER_MS = 45_000;
 
+// Watchdog de último recurso: se a TV ficar SEM NENHUM sync com o servidor por esse tempo contínuo
+// (SSE morto + todo refetch falhando), um location.reload() dá um estado limpo — resolve o caso
+// clássico de TV ligada há dias com um EventSource travado que nem reconecta, ou um bundle que
+// falhou a carregar parcialmente. Bem acima de DISCONNECTED_AFTER_MS (que só mostra o overlay):
+// primeiro tenta se recuperar sozinha por vários minutos, só recarrega se realmente não voltar.
+const HARD_RELOAD_AFTER_MS = 4 * 60_000;
+
 // Animação CSS pura (@keyframes broadcast-scene-fade, ver <style> abaixo), não mais um
 // useState+useEffect setando opacity depois do mount. Achado real: numa TV com engine JS
 // desatualizada/bundle que falha ao carregar, o opacity:0 inicial (que o SSR já manda pronto no
@@ -154,6 +161,12 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
             markSynced();
             return;
           }
+          // Ordem explícita do admin pra esta TV recarregar (não é "algo mudou, rebusque"). Ver
+          // BroadcastOutputEvent em contracts/types.ts e features/outputs/reload-output.
+          if (message.type === "reload") {
+            window.location.reload();
+            return;
+          }
           void refetchState();
         };
       } catch {
@@ -172,9 +185,53 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
   // Timer separado que só olha o relógio — não faz rede nenhuma, então não precisa remontar
   // quando `token` muda nem conviver com o efeito de assinatura acima. setState idempotente
   // (mesmo valor não re-renderiza), seguro pra rodar a cada DISCONNECT_CHECK_MS.
+  // Telemetria de volta pro servidor (viewport/navegador/status) — o admin usa pra saber que TV
+  // está de fato no ar e há quanto tempo (ver runtime/output-beacon.ts). clientId estável por
+  // sessão de aba; crypto.randomUUID só existe em contexto seguro (a view roda em HTTP na LAN),
+  // por isso o fallback.
+  const clientIdRef = useRef<string>("");
+  if (!clientIdRef.current) {
+    clientIdRef.current =
+      globalThis.crypto?.randomUUID?.() ?? `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  const beaconStatusRef = useRef("playing");
+  beaconStatusRef.current = state.offline ? "standby" : disconnected ? "disconnected" : "playing";
+
+  useEffect(() => {
+    const send = () => {
+      try {
+        void fetch(`/api/broadcast/output/${token}/beacon`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            clientId: clientIdRef.current,
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            userAgent: navigator.userAgent,
+            status: beaconStatusRef.current,
+          }),
+          keepalive: true,
+        });
+      } catch {
+        // best-effort — a telemetria nunca deve atrapalhar a reprodução.
+      }
+    };
+    send();
+    const interval = setInterval(send, 30_000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const hardReloadTriggeredRef = useRef(false);
   useEffect(() => {
     const interval = setInterval(() => {
-      setDisconnected(Date.now() - lastSyncAtRef.current > DISCONNECTED_AFTER_MS);
+      const staleFor = Date.now() - lastSyncAtRef.current;
+      setDisconnected(staleFor > DISCONNECTED_AFTER_MS);
+      // Watchdog: passou de HARD_RELOAD_AFTER_MS sem nenhum sync → recarrega a página uma vez (o
+      // ref evita disparar de novo se o reload demorar a acontecer). lastSyncAtRef é semeado com
+      // Date.now() na montagem, então logo depois de um reload o contador zera.
+      if (staleFor > HARD_RELOAD_AFTER_MS && !hardReloadTriggeredRef.current) {
+        hardReloadTriggeredRef.current = true;
+        window.location.reload();
+      }
     }, DISCONNECT_CHECK_MS);
     return () => clearInterval(interval);
   }, []);

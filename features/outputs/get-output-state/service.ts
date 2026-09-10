@@ -11,6 +11,7 @@ import {
   DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
 } from "../../../shared/playback-defaults";
 import { BROADCAST_SETTINGS, type BroadcastAgendaAnimationStyle, type BroadcastAgendaViewSize } from "../../../shared/settings";
+import { resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
 import { resolveEventEndDate, resolveEventOccurrenceDate } from "../../../shared/weekly-recurrence";
@@ -23,6 +24,7 @@ import {
   findAllUpcomingAgendaEvents,
   findLayersBySceneId,
   findOutputByToken,
+  findPlaylistScheduleForOutput,
   findSceneById,
   findVisiblePlaylistItemsByPlaylistId,
 } from "./store";
@@ -216,7 +218,25 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const timeZone = await resolveTimeZone();
 
   const scene = output.currentSceneId ? await findSceneById(output.currentSceneId) : null;
-  const layers = scene ? await findLayersBySceneId(scene.id) : [];
+  const sceneLayers = scene ? await findLayersBySceneId(scene.id) : [];
+
+  // Dayparting: se um slot de programação casa com "agora" (parede da instituição), a camada de
+  // vídeo passa a apontar pra playlist do slot NO LUGAR da config.playlistId gravada — o cliente da
+  // view (layer-renderer) nem sabe da troca, só renderiza o que recebe. Sem slot casando, os
+  // layers vão crus, comportamento anterior. Ver shared/playlist-schedule.ts.
+  const scheduledPlaylistId = resolveScheduledPlaylistId(
+    await findPlaylistScheduleForOutput(output.id),
+    new Date(),
+    timeZone,
+  );
+  const layers =
+    scheduledPlaylistId != null
+      ? sceneLayers.map((layer) =>
+          layer.type === "video" && readStringConfig(layer.config, "playlistId")
+            ? { ...layer, config: { ...layer.config, playlistId: scheduledPlaylistId } }
+            : layer,
+        )
+      : sceneLayers;
 
   const videoPlaylistIds = new Set<string>();
   for (const layer of layers) {
