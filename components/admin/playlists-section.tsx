@@ -114,7 +114,7 @@ function relativeDays(iso: string): string {
 
 // Selo de saúde da pasta compartilhada de vídeos — lido uma vez ao abrir a aba. Sinaliza cedo
 // "a pasta sumiu / o compartilhamento caiu" em vez de o operador só descobrir no "Escanear pasta".
-function VideosFolderHealthBadge() {
+export function VideosFolderHealthBadge() {
   const [health, setHealth] = useState<Awaited<ReturnType<typeof getVideosFolderHealthAction>>>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -155,7 +155,7 @@ function VideosFolderHealthBadge() {
 
 // Relatório de exibições (proof-of-play) — carrega sob demanda ao abrir o <details>. Os números
 // vêm do beacon das TVs (uma linha por vez que um item começa a tocar).
-function PlaybackReportPanel() {
+export function PlaybackReportPanel() {
   const [sinceDays, setSinceDays] = useState(7);
   const [data, setData] = useState<Awaited<ReturnType<typeof getPlaybackStatsAction>>>(null);
   const [loading, setLoading] = useState(false);
@@ -1392,7 +1392,6 @@ export function PlaylistsSection({
   return (
     <div className="space-y-4">
       <VideosFolderHealthBadge />
-      {canManageAll && <PlaybackReportPanel />}
       {canManageAll && <CreatePlaylistForm />}
       {playlists.length === 0 && (
         <p className="text-sm text-muted-foreground">

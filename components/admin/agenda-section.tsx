@@ -861,7 +861,7 @@ function AgendaDetail({
   selectedOutputIds: string[];
   canManageAll: boolean;
 }) {
-  const [tab, setTab] = useUrlParam("aba", "eventos");
+  const [tab, setTab] = useUrlParam("ver", "eventos");
   const status = agendaItemStatus(events.length, selectedOutputIds.length);
   const linkedNames = outputs.filter((output) => selectedOutputIds.includes(output.id)).map((output) => output.name);
 

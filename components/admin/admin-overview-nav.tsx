@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@venore/plugin-sdk/ui";
+import { useUrlParam } from "./master-detail";
 import { STATUS_BORDER_CLASSNAME, StatusDot } from "./status-dot";
 import type { StatusTone } from "./status";
 
@@ -47,7 +48,12 @@ function OverviewCard({ tab, active, onSelect }: { tab: AdminTab; active: boolea
 // que já existia — clicar num card ou numa aba faz a mesma coisa (estado controlado único), então
 // os cards são só um atalho maior/mais visual pra a mesma navegação, não um mecanismo paralelo.
 export function AdminOverviewNav({ tabs }: { tabs: AdminTab[] }) {
-  const [value, setValue] = useState(tabs[0].key);
+  // Aba ativa na URL (?aba=<key>) — deep-link + o atalho "Playlists em uso" do Dashboard consegue
+  // pular pra Telas › tela X. Cai na primeira aba quando o valor não bate com nenhuma (ex: link
+  // pra uma aba que este ator não vê).
+  const [rawValue, setRawValue] = useUrlParam("aba", tabs[0].key);
+  const value = tabs.some((tab) => tab.key === rawValue) ? (rawValue as string) : tabs[0].key;
+  const setValue = (next: string) => setRawValue(next);
   const overviewTabs = tabs.filter((tab) => tab.status);
 
   return (

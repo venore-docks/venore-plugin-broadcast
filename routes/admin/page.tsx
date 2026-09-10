@@ -265,6 +265,19 @@ export default async function BroadcastAdminPage() {
     agendas.map((agenda) => [agenda.id, (agendaOutputIdsByAgendaId[agenda.id] ?? []).length]),
   );
 
+  // "Playlists em uso" do Dashboard (v1.7 — não há mais aba Playlists): só as playlists que
+  // alguma tela toca, mais usadas primeiro.
+  const playlistsInUse = playlists
+    .map((playlist) => ({
+      id: playlist.id,
+      name: playlist.name,
+      itemCount: playlistItemCountById[playlist.id] ?? 0,
+      ownerOutputId: playlist.ownerOutputId,
+      outputNames: outputNamesByPlaylistId[playlist.id] ?? [],
+    }))
+    .filter((playlist) => playlist.outputNames.length > 0)
+    .sort((a, b) => b.outputNames.length - a.outputNames.length || a.name.localeCompare(b.name));
+
   // Lista de abas montada dinamicamente a partir do que o ator pode ver — substitui a escada fixa
   // de if/else que existia aqui antes (só cobria as combinações de duas permissions escopadas;
   // com a terceira, broadcast.playlists.manage, o número de combinações explode). Uma única fonte
@@ -281,7 +294,14 @@ export default async function BroadcastAdminPage() {
       label: "Dashboard",
       icon: <LayoutDashboard aria-hidden="true" />,
       description: "Resumo do Broadcast Studio e o aviso rápido que aparece em todas as telas.",
-      view: <DashboardSection outputsCount={outputs.length} playlistsCount={playlists.length} agendasCount={agendas.length} />,
+      view: (
+        <DashboardSection
+          outputsCount={outputs.length}
+          playlistsCount={playlists.length}
+          agendasCount={agendas.length}
+          playlistsInUse={playlistsInUse}
+        />
+      ),
     },
     hasOutputsAccess && {
       key: "outputs",
@@ -292,11 +312,15 @@ export default async function BroadcastAdminPage() {
       status: outputsTabStatus(outputs, outputHasPlaylistById),
       itemCount: outputs.length,
     },
-    (hasFullAccess || hasPlaylistsAccess) && {
+    // v1.7: a playlist de cada tela é editada dentro do detalhe da própria tela (aba Conteúdo) —
+    // o admin pleno não tem mais aba "Playlists". A aba só aparece pra um responsável escopado
+    // (broadcast.playlists.manage sem broadcast.manage), que precisa de um lugar pra editar as
+    // playlists atribuídas a ele sem acesso a Telas.
+    hasPlaylistsAccess && !hasFullAccess && {
       key: "playlists",
-      label: "Playlists",
+      label: "Playlists atribuídas",
       icon: <ListVideo aria-hidden="true" />,
-      description: "Uma playlist é a lista de vídeos, imagens, páginas web e notícias que uma tela reproduz em sequência.",
+      description: "As playlists atribuídas a você. A ordem aqui é a ordem de reprodução na tela.",
       view: playlistsView,
       status: playlistsTabStatus(playlists, playlistItemCountById),
       itemCount: playlists.length,

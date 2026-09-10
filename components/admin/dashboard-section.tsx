@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useRef } from "react";
-import { CalendarDays, ListVideo, Siren, Tv } from "lucide-react";
+import { CalendarDays, ExternalLink, ListVideo, Siren, Tv } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
+import { PlaybackReportPanel } from "./playlists-section";
 import {
   clearAlertAction,
   clearTakeoverAction,
@@ -117,6 +118,58 @@ function SummaryStat({ icon, label, count }: { icon: React.ReactNode; label: str
   );
 }
 
+// v1.7: sem aba "Playlists", este é o único lugar que dá a visão "quais playlists existem e quem
+// usa o quê". Cada linha pula pro detalhe da tela dona (Telas › X › aba Conteúdo). Só entra
+// playlist que alguma tela toca — playlist órfã não interessa aqui.
+export type PlaylistInUse = {
+  id: string;
+  name: string;
+  itemCount: number;
+  ownerOutputId: string | null;
+  outputNames: string[];
+};
+
+function PlaylistsInUsePanel({ playlists }: { playlists: PlaylistInUse[] }) {
+  return (
+    <div className="space-y-2 rounded-panel border border-border bg-card p-3">
+      <p className="text-sm font-medium text-foreground">Playlists em uso</p>
+      <p className="text-xs text-muted-foreground">O conteúdo de cada tela. Clique para editar os itens na tela dona.</p>
+      {playlists.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nenhuma tela está tocando uma playlist ainda.</p>
+      ) : (
+        <div className="divide-y divide-border/60">
+          {playlists.map((playlist) => {
+            const row = (
+              <div className="flex flex-wrap items-center gap-2 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{playlist.name}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {playlist.itemCount} {playlist.itemCount === 1 ? "item" : "itens"}
+                </span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Tv className="size-3" aria-hidden="true" />
+                  {playlist.outputNames.length === 1 ? playlist.outputNames[0] : `${playlist.outputNames.length} telas`}
+                </span>
+                {playlist.ownerOutputId && <ExternalLink className="size-3 text-muted-foreground" aria-hidden="true" />}
+              </div>
+            );
+            return playlist.ownerOutputId ? (
+              <a
+                key={playlist.id}
+                href={`?aba=outputs&tela=${playlist.ownerOutputId}&ver=conteudo`}
+                className="block ui-motion-base hover:bg-accent/6"
+              >
+                {row}
+              </a>
+            ) : (
+              <div key={playlist.id}>{row}</div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Nova aba "Dashboard" (pedido explícito: "vamos criar um dashboard do broadcast com resumo — hoje
 // ele abre direto em Telas") — primeira entrada de tabs em routes/admin/page.tsx, então vira a aba
 // padrão ao abrir /admin/broadcast, no lugar de "Telas". Só pra hasFullAccess (mesmo gate de
@@ -126,10 +179,12 @@ export function DashboardSection({
   outputsCount,
   playlistsCount,
   agendasCount,
+  playlistsInUse,
 }: {
   outputsCount: number;
   playlistsCount: number;
   agendasCount: number;
+  playlistsInUse: PlaylistInUse[];
 }) {
   return (
     <div className="space-y-4">
@@ -140,6 +195,8 @@ export function DashboardSection({
       </div>
       <QuickAlertPanel />
       <TakeoverPanel />
+      <PlaylistsInUsePanel playlists={playlistsInUse} />
+      <PlaybackReportPanel />
     </div>
   );
 }

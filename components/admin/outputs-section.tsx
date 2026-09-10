@@ -40,7 +40,7 @@ import type { PickableMedia } from "@venore/plugin-sdk/ui";
 import { ConfirmDeleteButton } from "./confirm-delete-form";
 import { ListDropdownBadge } from "./list-badge";
 import { MasterDetail, useUrlParam, type MasterDetailEntry } from "./master-detail";
-import { PlaylistAddSection, SortablePlaylistItems } from "./playlists-section";
+import { PlaylistAddSection, SortablePlaylistItems, VideosFolderHealthBadge } from "./playlists-section";
 // Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
 // de playlists-section.tsx/agenda-section.tsx.
 import type {
@@ -1520,7 +1520,7 @@ function OutputContentTab({
           </p>
           {ownerOutput && (
             <a
-              href={`?tela=${ownerOutput.id}&aba=conteudo`}
+              href={`?aba=outputs&tela=${ownerOutput.id}&ver=conteudo`}
               className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
             >
               Editar os itens em Telas &rsaquo; {ownerOutput.name}
@@ -1630,7 +1630,7 @@ function OutputDetail({
 }) {
   const ownPlaylist = playlists.find((playlist) => playlist.ownerOutputId === output.id) ?? null;
   const [playlistId, setPlaylistId] = useState(outputPlaylistById[output.id] ?? null);
-  const [tab, setTab] = useUrlParam("aba", "conteudo");
+  const [tab, setTab] = useUrlParam("ver", "conteudo");
   const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
 
   return (
@@ -1823,6 +1823,7 @@ export function OutputsSection({
             <div className="flex flex-col gap-2">
               <CreateOutputDialog />
               <GroupsDialog outputs={outputs} />
+              <VideosFolderHealthBadge />
             </div>
           ) : undefined
         }
