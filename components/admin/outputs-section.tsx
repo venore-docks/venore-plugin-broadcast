@@ -61,6 +61,7 @@ import {
   deleteOutputAction,
   duplicateOutputAction,
   setOutputFrozenAction,
+  setOutputCardColorAction,
   setOutputGroupAction,
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
@@ -825,6 +826,43 @@ function OutputGroupField({ output, allGroups }: { output: BroadcastOutputRecord
         </datalist>
       </div>
       <Button type="submit" size="sm" variant="outline" disabled={pending}>Salvar</Button>
+    </form>
+  );
+}
+
+// Cor livre do card da tela no admin — só visual (faixa lateral no card + na linha da lista).
+// Salva no blur/change do seletor; o "Sem cor" limpa. NÃO mexe na bolinha de status.
+function OutputCardColorField({ output }: { output: BroadcastOutputRecord }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const [state, formAction, pending] = useActionState(setOutputCardColorAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Cor salva." });
+
+  function submitWith(value: string) {
+    if (colorInputRef.current) colorInputRef.current.value = value;
+    formRef.current?.requestSubmit();
+  }
+
+  return (
+    <form ref={formRef} action={formAction} className="flex items-end gap-2">
+      <input type="hidden" name="outputId" value={output.id} />
+      <input type="hidden" name="cardColor" ref={colorInputRef} defaultValue={output.cardColor ?? ""} />
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground" htmlFor={`${output.id}-card-color`}>Cor do card</label>
+        <input
+          id={`${output.id}-card-color`}
+          type="color"
+          defaultValue={output.cardColor ?? "#3b82f6"}
+          disabled={pending}
+          onBlur={(event) => submitWith(event.target.value)}
+          className="h-9 w-14 cursor-pointer rounded-md border border-border bg-card"
+        />
+      </div>
+      {output.cardColor && (
+        <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => submitWith("")}>
+          Sem cor
+        </Button>
+      )}
     </form>
   );
 }
@@ -1634,7 +1672,10 @@ function OutputDetail({
   const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
 
   return (
-    <Card className="gap-3">
+    <Card
+      className={`gap-3 ${output.cardColor ? "border-l-4" : ""}`}
+      style={output.cardColor ? { borderLeftColor: output.cardColor } : undefined}
+    >
       <OutputCoverPreview token={output.token} />
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
@@ -1651,8 +1692,9 @@ function OutputDetail({
           />
         </div>
         {canManageAll && (
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
             <OutputGroupField output={output} allGroups={allGroups} />
+            <OutputCardColorField output={output} />
           </div>
         )}
       </CardHeader>
@@ -1792,6 +1834,7 @@ export function OutputsSection({
       status: outputItemStatus(hasPlaylist),
       groupKey: output.groupName,
       groupLabel: output.groupName,
+      accentColor: output.cardColor,
       attention: !hasPlaylist || output.offline,
       badge:
         ips.length > 0 ? (

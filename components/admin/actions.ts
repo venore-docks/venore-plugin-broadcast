@@ -44,6 +44,7 @@ import {
   setOutputEditors,
   setOutputFooter,
   setOutputFallback,
+  setOutputCardColor,
   setOutputFrozen,
   setOutputGroup,
   setOutputHours,
@@ -533,6 +534,22 @@ export async function setOutputGroupAction(_prevState: BroadcastActionState, for
   const result = await setOutputGroup({
     outputId: requireString(formData, "outputId"),
     groupName: requireString(formData, "groupName") || null,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+export async function setOutputCardColorAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await setOutputCardColor({
+    outputId: requireString(formData, "outputId"),
+    cardColor: requireString(formData, "cardColor") || null,
   });
   if (!result.success) return { error: result.error.message };
 

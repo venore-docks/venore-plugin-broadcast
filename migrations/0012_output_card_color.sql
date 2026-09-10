@@ -1,0 +1,1 @@
+ALTER TABLE "broadcast"."outputs" ADD COLUMN "card_color" text;

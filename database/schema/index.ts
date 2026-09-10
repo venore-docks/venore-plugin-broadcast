@@ -305,6 +305,10 @@ export const broadcastOutputs = broadcastSchema.table(
     // lote no admin (recarregar todas, pôr/tirar de espera todas). null = sem grupo. Não afeta a
     // view; é só organização do admin.
     groupName: text("group_name"),
+    // Cor livre (hex) pro card/linha desta tela no admin — só organização visual, não afeta a
+    // view. null = sem cor (usa só a faixa de status). Aplicada como faixa lateral no card e um
+    // marcador na lista, sem substituir a bolinha de status ("precisa de atenção").
+    cardColor: text("card_color"),
     // "Congelar" — trava o item que está tocando (a playlist para de avançar) sem ir pra tela de
     // espera. Pra deixar um slide/aviso fixo no ar. O cliente lê via get-output-state + evento
     // "frozen-changed"; o PlaylistLayer desliga o timer e o onEnded enquanto frozen=true.

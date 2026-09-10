@@ -22,6 +22,9 @@ export type MasterDetailEntry = {
   groupLabel: string | null;
   // Indicador pequeno à direita da linha (ex: "2 TVs", "em 3 telas").
   badge?: ReactNode;
+  // Cor livre do item (hex) — vira uma faixa fina na borda esquerda da linha. NÃO substitui a
+  // bolinha de status (essa continua sendo o sinal de "precisa de atenção").
+  accentColor?: string | null;
   // Flutua a linha pro topo do grupo e marca visualmente — pro operador achar o que precisa de
   // atenção sem procurar.
   attention?: boolean;
@@ -178,9 +181,10 @@ export function MasterDetail({
                       type="button"
                       onClick={() => pick(entry.id)}
                       aria-current={active}
+                      style={entry.accentColor ? { borderLeftColor: entry.accentColor } : undefined}
                       className={`flex w-full items-center gap-2 border-t border-border/40 px-2.5 py-2 text-left ui-motion-base first:border-t-0 ${
-                        active ? "bg-accent/12" : "hover:bg-accent/6"
-                      }`}
+                        entry.accentColor ? "border-l-4" : ""
+                      } ${active ? "bg-accent/12" : "hover:bg-accent/6"}`}
                     >
                       <StatusDot tone={entry.status.tone} />
                       <span className="min-w-0 flex-1">

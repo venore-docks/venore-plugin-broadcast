@@ -229,6 +229,8 @@ export type BroadcastOutputRecord = {
   activeEndMinute: number | null;
   // Rótulo de grupo pra ações em lote no admin — null = sem grupo.
   groupName: string | null;
+  // Cor livre (hex) pro card/linha desta tela no admin — só visual, null = sem cor.
+  cardColor: string | null;
   // "Congelar" — a playlist para de avançar (item atual fixo) sem ir pra tela de espera.
   frozen: boolean;
   createdAt: Date;

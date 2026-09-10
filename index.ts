@@ -188,6 +188,8 @@ export type { SetOutputHoursInput, SetOutputHoursResult } from "./features/outpu
 // Grupos de telas — rótulo por tela + ações em lote (recarregar / modo espera todas do grupo).
 export { setOutputGroupHandler as setOutputGroup } from "./features/outputs/set-output-group/handler";
 export type { SetOutputGroupInput, SetOutputGroupResult } from "./features/outputs/set-output-group/types";
+export { setOutputCardColorHandler as setOutputCardColor } from "./features/outputs/set-output-card-color/handler";
+export type { SetOutputCardColorInput, SetOutputCardColorResult } from "./features/outputs/set-output-card-color/types";
 export { bulkOutputActionHandler as bulkOutputAction } from "./features/outputs/bulk-output-action/handler";
 export type { BulkOutputActionInput, BulkOutputActionResult, BulkOutputActionKind } from "./features/outputs/bulk-output-action/types";
 export { setOutputPinHandler as setOutputPin } from "./features/outputs/set-output-pin/handler";
