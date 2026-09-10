@@ -412,6 +412,7 @@ const BLUR_CANVAS_WIDTH = 480;
 function VideoSlide({
   itemId,
   withAudio,
+  loop,
   objectFitClassName,
   showBlurFill,
   videoRef,
@@ -420,6 +421,10 @@ function VideoSlide({
 }: {
   itemId: string;
   withAudio: boolean;
+  // Único slide da playlist (só este vídeo): avançar cairia de volta nele mesmo e o setIndex vira
+  // no-op — o <video> não remonta e fica preso no frame final (tela preta). `loop` nativo resolve;
+  // com >1 slide o avanço troca de item normalmente e o loop não entra.
+  loop: boolean;
   objectFitClassName: string;
   showBlurFill: boolean;
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -558,6 +563,7 @@ function VideoSlide({
         className={`relative h-full w-full ${objectFitClassName}`}
         src={streamUrl}
         autoPlay
+        loop={loop}
         // Item marcado "Tocar áudio na TV" (with_audio) sai sem mute; senão, muted (exigência de
         // autoplay do navegador). Se o navegador recusar o autoplay com som, volta pra reprodução
         // muda — nunca deixa a playlist travada num vídeo que não começou.
@@ -676,6 +682,7 @@ function PlaylistLayer({
         key={current.key}
         itemId={current.itemId}
         withAudio={current.withAudio}
+        loop={slides.length === 1}
         objectFitClassName={objectFitClassName}
         showBlurFill={fillMode === "contain"}
         videoRef={videoRef}
