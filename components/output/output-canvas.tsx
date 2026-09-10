@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 // Tipo importado direto da feature, não do barrel (@/plugins/broadcast) — mesmo racional de
 // layer-renderer.tsx: este é um "use client" component, e o barrel arrasta handlers server-only
 // pro bundle do browser.
@@ -10,6 +10,7 @@ import {
   type OutputStageTransform,
 } from "../../shared/output-stage";
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
+import { NowPlayingContext, type NowPlayingInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
@@ -197,6 +198,21 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
   const beaconStatusRef = useRef("playing");
   beaconStatusRef.current = state.offline ? "standby" : disconnected ? "disconnected" : "playing";
 
+  // "Qual item toca agora" — reportado pelo PlaylistLayer via NowPlayingContext. Dedupe pra não
+  // re-renderizar toda vez que o layer reemite o mesmo valor.
+  const [nowPlaying, setNowPlayingState] = useState<NowPlayingInfo | null>(null);
+  const reportNowPlaying = useCallback((info: NowPlayingInfo | null) => {
+    setNowPlayingState((prev) => (prev?.itemId === info?.itemId && prev?.index === info?.index ? prev : info));
+  }, []);
+  const nowPlayingRef = useRef<{ text: string | null; itemId: string | null; label: string | null }>({
+    text: null,
+    itemId: null,
+    label: null,
+  });
+  nowPlayingRef.current = nowPlaying
+    ? { text: `${nowPlaying.index}/${nowPlaying.count} — ${nowPlaying.label}`, itemId: nowPlaying.itemId, label: nowPlaying.label }
+    : { text: null, itemId: null, label: null };
+
   useEffect(() => {
     const send = () => {
       try {
@@ -208,6 +224,9 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
             viewport: `${window.innerWidth}x${window.innerHeight}`,
             userAgent: navigator.userAgent,
             status: beaconStatusRef.current,
+            nowPlaying: nowPlayingRef.current.text,
+            nowPlayingItemId: nowPlayingRef.current.itemId,
+            nowPlayingLabel: nowPlayingRef.current.label,
           }),
           keepalive: true,
         });
@@ -282,11 +301,12 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
   const visibleAlertMessage = state.activeAlertMessage && !alertExpired ? state.activeAlertMessage : null;
 
   return (
-    // Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
-    // preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
-    // cinza para HSL 0 0 20%" (= #333333, hue/saturação 0 = cinza puro, só a luminosidade muda).
-    // Hex direto via style, não className, mesmo racional do resto deste canvas (fora do
-    // vocabulário de cor do tema shadcn de propósito).
+    <NowPlayingContext.Provider value={reportNowPlaying}>
+    {/* Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
+        preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
+        cinza para HSL 0 0 20%" (= #333333, hue/saturação 0 = cinza puro, só a luminosidade muda).
+        Hex direto via style, não className, mesmo racional do resto deste canvas (fora do
+        vocabulário de cor do tema shadcn de propósito). */}
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#333333" }}>
       {/* Keyframes usados por AgendaLayer/AlertBanner/NewsSlideCard (layer-renderer.tsx) —
           definidos uma vez aqui no root do canvas em vez de um <style> por instância de layer.
@@ -387,6 +407,7 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
         )}
       </div>
     </div>
+    </NowPlayingContext.Provider>
   );
 }
 

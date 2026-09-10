@@ -42,11 +42,20 @@ function readStringConfig(config: Record<string, unknown>, key: string): string 
 // sourceType. Mesma defesa em profundidade dos outros resolvers do plugin: nunca confia em dado
 // gravado antes sem reconferir a fonte real.
 async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone: string): Promise<PlaylistItemSummary> {
+  // Rótulo pra humano (beacon "tocando 3/8 — X", proof-of-play) — título do operador, senão o nome
+  // do arquivo, senão a URL.
+  const rawLabel =
+    item.title?.trim() ||
+    (item.relativePath ? item.relativePath.split("/").pop() || item.relativePath : null) ||
+    item.url ||
+    null;
+
   if (item.sourceType === "webpage") {
     return {
       id: item.id,
       order: item.order,
       kind: "webpage",
+      label: rawLabel ?? "Página web",
       durationSeconds: item.durationSeconds ?? DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
       url: item.url,
       withAudio: item.withAudio,
@@ -59,6 +68,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
       id: item.id,
       order: item.order,
       kind: "news",
+      label: rawLabel ?? "Notícias",
       durationSeconds: item.durationSeconds ?? DEFAULT_NEWS_BLOCK_DURATION_SECONDS,
       url: null,
       withAudio: false,
@@ -72,6 +82,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
       id: item.id,
       order: item.order,
       kind: "agenda-event",
+      label: rawLabel ?? event?.title ?? "Evento da agenda",
       durationSeconds: item.durationSeconds ?? DEFAULT_AGENDA_EVENT_SLIDE_DURATION_SECONDS,
       url: null,
       withAudio: false,
@@ -92,6 +103,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
     id: item.id,
     order: item.order,
     kind,
+    label: rawLabel ?? (kind === "image" ? "Imagem" : "Vídeo"),
     durationSeconds: kind === "image" ? (item.durationSeconds ?? DEFAULT_SLIDE_DURATION_SECONDS) : null,
     url: null,
     withAudio: kind === "video" ? item.withAudio : false,

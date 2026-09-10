@@ -55,6 +55,7 @@ import {
   checkWebpageEmbeddableAction,
   createPlaylistAction,
   duplicatePlaylistAction,
+  getPlaybackStatsAction,
   getVideosFolderHealthAction,
   listMetricsBoardOptionsAction,
   deletePlaylistAction,
@@ -149,6 +150,84 @@ function VideosFolderHealthBadge() {
         ? ` · ${health.otherFileCount} arquivo${health.otherFileCount === 1 ? "" : "s"} não-vídeo ignorado${health.otherFileCount === 1 ? "" : "s"}`
         : ""}
     </p>
+  );
+}
+
+// Relatório de exibições (proof-of-play) — carrega sob demanda ao abrir o <details>. Os números
+// vêm do beacon das TVs (uma linha por vez que um item começa a tocar).
+function PlaybackReportPanel() {
+  const [sinceDays, setSinceDays] = useState(7);
+  const [data, setData] = useState<Awaited<ReturnType<typeof getPlaybackStatsAction>>>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    getPlaybackStatsAction(sinceDays).then((result) => {
+      if (!cancelled) {
+        setData(result);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sinceDays]);
+
+  return (
+    <details className="rounded-panel border border-border bg-card p-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-sm font-medium text-foreground">Relatório de exibições</summary>
+      <div className="mt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Período:</span>
+          {[7, 30, 90].map((days) => (
+            <button
+              key={days}
+              type="button"
+              onClick={() => setSinceDays(days)}
+              className={`rounded-full border px-2 py-0.5 text-xs ${
+                sinceDays === days ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              {days} dias
+            </button>
+          ))}
+        </div>
+        {loading && <p className="text-xs text-muted-foreground">Carregando…</p>}
+        {!loading && data && data.stats.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            Nenhuma exibição registrada no período. Os dados começam a ser coletados quando as TVs reportam o que estão tocando.
+          </p>
+        )}
+        {!loading && data && data.stats.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{data.total} exibições no total (top 30 itens).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1 pr-2 font-medium">Item</th>
+                    <th className="py-1 pr-2 text-right font-medium">Exibições</th>
+                    <th className="py-1 text-right font-medium">Telas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.stats.map((stat) => (
+                    <tr key={stat.itemLabel} className="border-t border-border/60">
+                      <td className="py-1 pr-2 text-foreground">{stat.itemLabel}</td>
+                      <td className="py-1 pr-2 text-right tabular-nums text-foreground">{stat.plays}</td>
+                      <td className="py-1 text-right tabular-nums text-muted-foreground">{stat.screens}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -1286,6 +1365,7 @@ export function PlaylistsSection({
   return (
     <div className="space-y-4">
       <VideosFolderHealthBadge />
+      {canManageAll && <PlaybackReportPanel />}
       {canManageAll && <CreatePlaylistForm />}
       {playlists.length === 0 && (
         <p className="text-sm text-muted-foreground">

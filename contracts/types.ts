@@ -235,6 +235,9 @@ export type PlaylistItemSummary = {
   id: string;
   order: number;
   kind: PlaylistItemKind;
+  // Rótulo pra humano (título do operador → nome do arquivo → URL → tipo). Usado no beacon de
+  // telemetria ("tocando 3/8 — X") e no proof-of-play. Nunca vazio.
+  label: string;
   // Só relevante pra "image"/"webpage"/"news"/"agenda-event" — vídeo usa a duração natural do
   // arquivo (onEnded). Pra "news" é o teto do bloco inteiro (todas as manchetes rodando), não por
   // manchete; pra "agenda-event" é quanto tempo o card do evento fica sozinho na tela.

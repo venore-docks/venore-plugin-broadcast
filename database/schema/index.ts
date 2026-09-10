@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, integer, jsonb, pgSchema, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgSchema, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const broadcastSchema = pgSchema("broadcast");
 
@@ -328,6 +328,22 @@ export const broadcastOutputPlaylistSchedule = broadcastSchema.table("output_pla
   endMinute: integer("end_minute").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Proof-of-play — uma linha por vez que um item COMEÇA a tocar numa tela (detectado pelo beacon:
+// o nowPlayingItemId mudou). Sem FK: é um log histórico que precisa sobreviver à exclusão da tela
+// ou do item; item_label é o snapshot pra humano (o item pode nem existir mais no relatório).
+// Índice em played_at pro filtro por período do relatório.
+export const broadcastPlaybackLog = broadcastSchema.table(
+  "playback_log",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    outputId: text("output_id").notNull(),
+    playlistItemId: text("playlist_item_id"),
+    itemLabel: text("item_label").notNull(),
+    playedAt: timestamp("played_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("broadcast_playback_log_played_at_idx").on(table.playedAt)],
+);
 
 // Vínculo agenda↔saída — modelo "opt-in": uma agenda SEM nenhuma linha aqui não aparece em
 // NENHUMA saída; só entra no rodízio de uma saída específica quando existe uma linha ligando as

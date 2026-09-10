@@ -64,6 +64,13 @@
       "when": 1789049803857,
       "tag": "0008_output_group",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789050388358,
+      "tag": "0009_playback_log",
+      "breakpoints": true
     }
   ]
 }

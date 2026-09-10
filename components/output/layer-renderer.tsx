@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Clock, MapPin } from "lucide-react";
 import { Progress } from "@venore/plugin-sdk/ui";
 // Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — este é um "use
@@ -16,6 +16,7 @@ import {
 import { isEventHappeningNow } from "../../shared/weekly-recurrence";
 import { isSameZonedCalendarDay } from "../../shared/timezone";
 import { resolveContrastPalette } from "./contrast-palette";
+import { NowPlayingContext } from "./now-playing-context";
 import {
   DEFAULT_AGENDA_BACKGROUND,
   TV_ACCENT_COLOR,
@@ -636,6 +637,20 @@ function PlaylistLayer({
   const timedActive = current !== null && current.kind !== "video";
 
   useTimedAdvance(timedDurationMs, advance, timedActive, manualTick);
+
+  // Reporta "qual item toca agora" pro beacon de telemetria (via NowPlayingContext, provido pelo
+  // OutputCanvas). items e slides são 1:1, então items[index] casa com `current`.
+  const reportNowPlaying = useContext(NowPlayingContext);
+  const nowPlayingItem = items.length > 0 ? items[index % items.length] : null;
+  useEffect(() => {
+    if (!reportNowPlaying) return;
+    reportNowPlaying(
+      nowPlayingItem
+        ? { index: (index % items.length) + 1, count: items.length, label: nowPlayingItem.label, itemId: nowPlayingItem.id }
+        : null,
+    );
+    return () => reportNowPlaying(null);
+  }, [reportNowPlaying, index, items, items.length, nowPlayingItem]);
 
   // Sem item resolvível, ou sem nenhum vídeo na playlist — tela de espera branded "nenhum
   // conteúdo" no lugar do texto cru sobre tela preta (Fase 11).

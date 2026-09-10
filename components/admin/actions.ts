@@ -27,6 +27,7 @@ import {
   listConnectedOutputIps,
   listOutputPinBlocks,
   listOutputTelemetry,
+  listPlaybackStats,
   publishAlert,
   reloadOutput,
   reorderAgendas,
@@ -60,7 +61,7 @@ import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastOutputRecord } from "../../contracts/types";
-import type { OutputBeaconSummary, VideosFolderHealth } from "../../index";
+import type { OutputBeaconSummary, PlaybackStat, VideosFolderHealth } from "../../index";
 
 export type BroadcastActionState = { error: string | null };
 
@@ -1054,6 +1055,16 @@ export async function getOutputPinBlocksAction(): Promise<string[]> {
 
   const result = await listOutputPinBlocks();
   return result.success ? result.data : [];
+}
+
+// Relatório de exibições (proof-of-play) — agregado das últimas N dias. null em qualquer erro.
+export async function getPlaybackStatsAction(
+  sinceDays: number,
+): Promise<{ sinceDays: number; total: number; stats: PlaybackStat[] } | null> {
+  if (!(await isPluginActive("broadcast"))) return null;
+
+  const result = await listPlaybackStats({ sinceDays });
+  return result.success ? result.data : null;
 }
 
 // Saúde da pasta de vídeos — chamado uma vez ao abrir a aba Playlists. null em qualquer erro.

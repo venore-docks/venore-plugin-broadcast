@@ -236,6 +236,12 @@ export type { ListOutputPinBlocksResult } from "./features/outputs/list-output-p
 export { listOutputTelemetryHandler as listOutputTelemetry } from "./features/outputs/list-output-telemetry/handler";
 export type { ListOutputTelemetryResult } from "./features/outputs/list-output-telemetry/types";
 export type { OutputBeaconSummary } from "./runtime/output-beacon";
+// Proof-of-play — logPlayback é chamado pela rota do beacon (acesso por token, sem auth);
+// listPlaybackStats é o relatório agregado (gate broadcast.manage).
+export { logPlaybackHandler as logPlayback } from "./features/outputs/log-playback/handler";
+export type { LogPlaybackInput, LogPlaybackResult } from "./features/outputs/log-playback/types";
+export { listPlaybackStatsHandler as listPlaybackStats } from "./features/outputs/list-playback-stats/handler";
+export type { ListPlaybackStatsResult, PlaybackStat } from "./features/outputs/list-playback-stats/types";
 // Dayparting — programação de playlist por horário/dia da semana, por tela. get-output-state lê os
 // slots direto do store dele; estes são pro admin (set = editar, list = loader da página).
 export { setOutputPlaylistScheduleHandler as setOutputPlaylistSchedule } from "./features/outputs/set-output-playlist-schedule/handler";

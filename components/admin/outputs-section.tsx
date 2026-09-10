@@ -1230,6 +1230,7 @@ function OutputStatusRow({
       {primary && (
         <p className="text-xs text-muted-foreground">
           {primary.viewport.replace("x", "×")} · {primary.browser} · no ar há {formatUptime(primary.uptimeSeconds)}
+          {primary.nowPlaying ? ` · tocando ${primary.nowPlaying}` : ""}
           {telemetry.length > 1 ? ` · +${telemetry.length - 1}` : ""}
         </p>
       )}
