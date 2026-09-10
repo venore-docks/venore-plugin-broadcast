@@ -6,10 +6,12 @@ import {
   Check,
   Clock,
   Copy,
+  CopyPlus,
   ExternalLink,
   EyeOff,
   KeyRound,
   Layers,
+  Link2,
   ListVideo,
   PanelBottomClose,
   PanelBottomOpen,
@@ -28,7 +30,7 @@ import {
   Tv,
 } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@venore/plugin-sdk/ui";
+import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@venore/plugin-sdk/ui";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
@@ -307,7 +309,7 @@ function OutputCoverPreview({ token }: { token: string }) {
       // arredondam o topo automaticamente, mesmo racional do has-[>img:first-child]:pt-0 que o
       // componente já prevê pra uma imagem de capa de verdade.
       ref={containerRef}
-      className="relative -mt-(--card-spacing) aspect-video overflow-hidden bg-muted"
+      className="relative -mt-(--card-spacing) aspect-video min-h-40 overflow-hidden bg-muted"
     >
       {open && scale > 0 ? (
         <>
@@ -915,10 +917,25 @@ function GroupSyncToggle({ groupName, enabled }: { groupName: string; enabled: b
   );
 }
 
-function GroupsPanel({ outputs, syncedGroups }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[] }) {
+function GroupsPanel({
+  outputs,
+  syncedGroups,
+  outputPlaylistById,
+}: {
+  outputs: BroadcastOutputRecord[];
+  syncedGroups: string[];
+  outputPlaylistById: Record<string, string | null>;
+}) {
   const counts = new Map<string, number>();
+  const playlistIdsByGroup = new Map<string, Set<string>>();
   for (const output of outputs) {
-    if (output.groupName) counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
+    if (!output.groupName) continue;
+    counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
+    const pid = outputPlaylistById[output.id];
+    if (pid) {
+      if (!playlistIdsByGroup.has(output.groupName)) playlistIdsByGroup.set(output.groupName, new Set());
+      playlistIdsByGroup.get(output.groupName)!.add(pid);
+    }
   }
   const groups = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   if (groups.length === 0) return null;
@@ -927,28 +944,39 @@ function GroupsPanel({ outputs, syncedGroups }: { outputs: BroadcastOutputRecord
     <div className="space-y-2 rounded-panel border border-border bg-card p-3">
       <p className="text-sm font-medium text-foreground">Grupos de telas</p>
       <p className="text-xs text-muted-foreground">
-        Ações em lote e reprodução sincronizada. Sincronizar só faz sentido quando as telas do grupo tocam a mesma playlist —
-        as TVs mostram o mesmo item, com ajuste de tempo (~1-2s de diferença, não é frame a frame).
+        Ações em lote e reprodução sincronizada. Sincronizar só funciona quando as telas do grupo tocam a{" "}
+        <strong>mesma</strong> playlist (aponte uma tela pra playlist de outra na aba Conteúdo) — as TVs mostram o mesmo item,
+        com ajuste de tempo (~1-2s de diferença, não é frame a frame).
       </p>
       <div className="space-y-2">
-        {groups.map(([name, count]) => (
-          <div key={name} className="space-y-1.5 border-t border-border/60 pt-2 first:border-t-0 first:pt-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-foreground">{name}</span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {count} {count === 1 ? "tela" : "telas"}
-              </span>
-              <div className="ml-auto">
-                <GroupSyncToggle groupName={name} enabled={syncedGroups.includes(name)} />
+        {groups.map(([name, count]) => {
+          const synced = syncedGroups.includes(name);
+          const distinctPlaylists = playlistIdsByGroup.get(name)?.size ?? 0;
+          return (
+            <div key={name} className="space-y-1.5 border-t border-border/60 pt-2 first:border-t-0 first:pt-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-foreground">{name}</span>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {count} {count === 1 ? "tela" : "telas"}
+                </span>
+                <div className="ml-auto">
+                  <GroupSyncToggle groupName={name} enabled={synced} />
+                </div>
+              </div>
+              {synced && distinctPlaylists > 1 && (
+                <p className="rounded-panel border border-warning-border bg-warning-soft p-1.5 text-xs text-warning">
+                  As telas deste grupo tocam playlists diferentes — a sincronização não vai casar. Aponte todas pra mesma
+                  playlist na aba Conteúdo.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-1">
+                <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
+                <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
+                <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
               </div>
             </div>
-            <div className="flex flex-wrap gap-1">
-              <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
-              <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
-              <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1256,17 +1284,47 @@ function DeleteOutputButton({ outputId, dedicatedPlaylistName }: { outputId: str
 }
 
 // "Duplicar tela" — cria "Cópia de X" com playlist dedicada, itens e ajustes de exibição copiados
-// (sem token/PIN/responsáveis/vínculos/programação, ver features/outputs/duplicate-output).
+// (sem token/PIN/responsáveis/vínculos/programação, ver features/outputs/duplicate-output). Ícone
+// CopyPlus (não Copy) pra não ser confundido com "copiar o link".
 function DuplicateOutputButton({ outputId }: { outputId: string }) {
   const [state, formAction, pending] = useActionState(duplicateOutputAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Tela duplicada." });
+  useActionToast({ pending, error: state.error, successMessage: "Tela duplicada — ela aparece na lista." });
   return (
     <form action={formAction}>
       <input type="hidden" name="outputId" value={outputId} />
-      <Button type="submit" variant="ghost" size="icon" disabled={pending} aria-label="Duplicar tela">
-        <Copy className="size-4" />
+      <Button type="submit" variant="ghost" size="icon" disabled={pending} aria-label="Duplicar tela" title="Duplicar tela">
+        <CopyPlus className="size-4" />
       </Button>
     </form>
+  );
+}
+
+// Copia o link da TV — versão ícone pro cabeçalho do detalhe (o botão grande verde fica no rodapé).
+// Reusa a mesma lógica com fallback pra HTTP LAN de CopyOutputUrlButton.
+function CopyOutputUrlIconButton({ token }: { token: string }) {
+  const [copied, setCopied] = useState(false);
+  const path = `/ext/broadcast/out/${token}`;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="Copiar link da TV"
+      title="Copiar link da TV"
+      onClick={() => {
+        const url = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+        void copyTextToClipboard(url).then((ok) => {
+          if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } else {
+            window.prompt("Copie o link da TV:", url);
+          }
+        });
+      }}
+    >
+      {copied ? <Check className="size-4 text-success" /> : <Link2 className="size-4" />}
+    </Button>
   );
 }
 
@@ -1715,17 +1773,20 @@ function OutputDetail({
 
   return (
     <Card
-      className={`gap-3 ${output.cardColor ? "border-l-4" : ""}`}
-      style={output.cardColor ? { borderLeftColor: output.cardColor } : undefined}
+      className="gap-3"
+      // Faixa lateral com a cor do card — box-shadow inset (não border) pra aparecer sempre e não
+      // empurrar o layout. O Card usa ring, não border, então border-l-* não renderiza estilo.
+      style={output.cardColor ? { boxShadow: `inset 4px 0 0 0 ${output.cardColor}` } : undefined}
     >
       <OutputCoverPreview token={output.token} />
       <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="min-w-0 flex-1 truncate">{output.name}</CardTitle>
+        <CardTitle className="min-w-0 truncate">{output.name}</CardTitle>
+        <CardAction className="flex items-center gap-0.5">
+          <CopyOutputUrlIconButton token={output.token} />
           {canManageAll && <DuplicateOutputButton outputId={output.id} />}
           {canManageAll && <DeleteOutputButton outputId={output.id} dedicatedPlaylistName={ownPlaylist?.name ?? null} />}
-        </div>
-        <div className="mt-1">
+        </CardAction>
+        <div className="col-start-1 mt-1">
           <OutputStatusRow
             playlistName={playlistName}
             agendaNames={agendaNames}
@@ -1734,7 +1795,7 @@ function OutputDetail({
           />
         </div>
         {canManageAll && (
-          <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
+          <div className="col-start-1 mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
             <OutputGroupField output={output} allGroups={allGroups} />
             <OutputCardColorField output={output} />
           </div>
@@ -1817,7 +1878,7 @@ function CreateOutputDialog() {
   );
 }
 
-function GroupsDialog({ outputs, syncedGroups }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[] }) {
+function GroupsDialog({ outputs, syncedGroups, outputPlaylistById }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[]; outputPlaylistById: Record<string, string | null> }) {
   const hasGroups = outputs.some((output) => output.groupName);
   if (!hasGroups) return null;
   return (
@@ -1832,7 +1893,7 @@ function GroupsDialog({ outputs, syncedGroups }: { outputs: BroadcastOutputRecor
           <DialogTitle>Grupos de telas</DialogTitle>
           <DialogDescription>Ações em lote e reprodução sincronizada por grupo.</DialogDescription>
         </DialogHeader>
-        <GroupsPanel outputs={outputs} syncedGroups={syncedGroups} />
+        <GroupsPanel outputs={outputs} syncedGroups={syncedGroups} outputPlaylistById={outputPlaylistById} />
       </DialogContent>
     </Dialog>
   );
@@ -1912,7 +1973,7 @@ export function OutputsSection({
           canManageAll ? (
             <div className="flex flex-col gap-2">
               <CreateOutputDialog />
-              <GroupsDialog outputs={outputs} syncedGroups={syncedGroups} />
+              <GroupsDialog outputs={outputs} syncedGroups={syncedGroups} outputPlaylistById={outputPlaylistById} />
               <VideosFolderHealthBadge />
             </div>
           ) : undefined
