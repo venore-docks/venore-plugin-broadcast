@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, integer, jsonb, pgSchema, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, boolean, check, index, integer, jsonb, pgSchema, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const broadcastSchema = pgSchema("broadcast");
 
@@ -56,6 +56,19 @@ export const broadcastPlaylists = broadcastSchema.table("playlists", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   folderPath: text("folder_path"),
+  // Playlist dedicada a UMA tela (modelo 1:1 — pedido explícito: "criar playlist dedicada por
+  // tela", em vez de uma playlist compartilhada por várias telas). Preenchido quando a playlist
+  // nasce junto com a saída (create-output/store.ts); null pra playlist "compartilhada" criada à
+  // mão em /admin/broadcast — o comportamento anterior continua suportado, tanto pra instalações
+  // que já tinham telas apontando pra playlists compartilhadas quanto pra quem, de propósito,
+  // aponta várias telas pra mesma playlist depois (setOutputPlaylist). FK real (mesmo plugin).
+  // onDelete "set null" é só rede de segurança: delete-output/store.ts resolve o id da playlist
+  // dedicada ANTES de apagar a tela e apaga as duas na mesma transação (o set null zeraria a
+  // coluna antes de dar pra achar a playlist por owner_output_id).
+  // Anotação AnyPgColumn quebra o ciclo de inferência do tsc: playlists.ownerOutputId -> outputs,
+  // e outputs.currentPlaylistItemId -> playlist_items -> playlists (fecha o laço). Sem o tipo
+  // explícito, tsc não consegue inferir o tipo de nenhuma das três tabelas (TS7022/TS7024).
+  ownerOutputId: text("owner_output_id").references((): AnyPgColumn => broadcastOutputs.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -97,6 +110,14 @@ export const broadcastPlaylistItems = broadcastSchema.table(
     // com som (ex: Chrome `--autoplay-policy=no-user-gesture-required`); se o navegador bloquear, o
     // vídeo cai pra reprodução muda pra não travar a playlist (ver layer-renderer.tsx).
     withAudio: boolean("with_audio").notNull().default(false),
+    // Janela de validade opcional — o item só entra na reprodução da TV entre visible_from e
+    // visible_until. Ambos null (padrão) = sempre visível; pedido explícito: "este vídeo de fim de
+    // ano só aparece até 25/12". Timestamp completo, hora de parede da instituição convertida pra
+    // UTC no admin (mesmo tratamento de startAt de evento de agenda). O item NÃO é apagado fora da
+    // janela — só some da reprodução, igual ao `hidden`. Filtro em get-output-state/store.ts
+    // (findVisiblePlaylistItemsByPlaylistId).
+    visibleFrom: timestamp("visible_from", { withTimezone: true }),
+    visibleUntil: timestamp("visible_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -263,10 +284,86 @@ export const broadcastOutputs = broadcastSchema.table(
     // preguiçoso em routes/out/actions.ts). null = sem proteção, comportamento anterior inalterado.
     // Continua `text` (hash é texto) — nenhuma migração estrutural na Fase 9.
     pin: text("pin"),
+    // Fallback de conteúdo desta tela: quando a playlist não resolve nada tocável (vazia, arquivos
+    // sumidos, tudo fora da janela de validade), a view mostra ISTO no lugar da tela de espera
+    // genérica. fallbackMediaAssetId = imagem/vídeo da biblioteca (id cru, sem FK — resolução via
+    // @/contexts/media em get-output-state); fallbackMessage = texto livre. Os dois null = tela de
+    // espera branded padrão (comportamento anterior).
+    fallbackMediaAssetId: text("fallback_media_asset_id"),
+    fallbackMessage: text("fallback_message"),
+    // Horário de funcionamento — FORA da janela, a tela entra em modo espera automaticamente (a
+    // view mostra a StandbyScreen). Reaproveita o vocabulário de shared/playlist-schedule.ts:
+    // active_days é bitmask (bit 0 = domingo), start/end em minutos desde a meia-noite (hora de
+    // parede da instituição), fim exclusivo, sem cruzar meia-noite. Os três preenchidos = janela
+    // ativa; qualquer um null = sem horário, tela sempre no ar (comportamento anterior). O toggle
+    // manual "Modo espera" (offline) continua funcionando por cima — se offline=true, fica em
+    // espera independente do horário.
+    activeDays: integer("active_days"),
+    activeStartMinute: integer("active_start_minute"),
+    activeEndMinute: integer("active_end_minute"),
+    // Rótulo de grupo (texto livre) — telas com o mesmo `group_name` formam um grupo pra ações em
+    // lote no admin (recarregar todas, pôr/tirar de espera todas). null = sem grupo. Não afeta a
+    // view; é só organização do admin.
+    groupName: text("group_name"),
+    // "Congelar" — trava o item que está tocando (a playlist para de avançar) sem ir pra tela de
+    // espera. Pra deixar um slide/aviso fixo no ar. O cliente lê via get-output-state + evento
+    // "frozen-changed"; o PlaylistLayer desliga o timer e o onEnded enquanto frozen=true.
+    frozen: boolean("frozen").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("broadcast_outputs_token_idx").on(table.token)],
+);
+
+// "Dayparting" — programação por horário/dia da semana: quando um slot casa com "agora" (na hora
+// de parede da instituição, broadcast.timezone), a tela toca a playlist deste slot NO LUGAR da
+// playlist padrão da camada de vídeo (config.playlistId). Sem slot casando, cai na padrão — o
+// comportamento anterior. Resolvido em get-output-state (shared/playlist-schedule.ts é a helper
+// pura). `days` é um bitmask: bit 0 = domingo ... bit 6 = sábado. start_minute/end_minute são
+// minutos desde a meia-noite (0–1439), fim exclusivo, sem cruzar meia-noite (o admin quebra "22h
+// às 2h" em dois slots). Ambas as FKs cascade — apagar a tela ou a playlist limpa o slot.
+export const broadcastOutputPlaylistSchedule = broadcastSchema.table("output_playlist_schedule", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  outputId: text("output_id")
+    .notNull()
+    .references(() => broadcastOutputs.id, { onDelete: "cascade" }),
+  playlistId: text("playlist_id")
+    .notNull()
+    .references(() => broadcastPlaylists.id, { onDelete: "cascade" }),
+  days: integer("days").notNull(),
+  startMinute: integer("start_minute").notNull(),
+  endMinute: integer("end_minute").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// "Takeover" — comunicado de urgência que cobre TODAS as telas em tela cheia (evacuação, recado
+// crítico). Diferente do aviso rápido (broadcast_alerts): o alert é lower-third que empurra o
+// conteúdo; o takeover substitui tudo, inclusive telas em modo espera. Mesma mecânica de "no
+// máximo um ativo por vez, expira sozinho" dos alerts. media_asset_id (opcional, texto solto sem
+// FK — resolução via @/contexts/media em get-output-state) mostra uma imagem em vez de/atrás do
+// texto.
+export const broadcastTakeover = broadcastSchema.table("takeover", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  message: text("message").notNull(),
+  mediaAssetId: text("media_asset_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Proof-of-play — uma linha por vez que um item COMEÇA a tocar numa tela (detectado pelo beacon:
+// o nowPlayingItemId mudou). Sem FK: é um log histórico que precisa sobreviver à exclusão da tela
+// ou do item; item_label é o snapshot pra humano (o item pode nem existir mais no relatório).
+// Índice em played_at pro filtro por período do relatório.
+export const broadcastPlaybackLog = broadcastSchema.table(
+  "playback_log",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    outputId: text("output_id").notNull(),
+    playlistItemId: text("playlist_item_id"),
+    itemLabel: text("item_label").notNull(),
+    playedAt: timestamp("played_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("broadcast_playback_log_played_at_idx").on(table.playedAt)],
 );
 
 // Vínculo agenda↔saída — modelo "opt-in": uma agenda SEM nenhuma linha aqui não aparece em

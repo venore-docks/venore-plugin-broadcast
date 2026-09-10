@@ -10,8 +10,11 @@ export type StatusInfo = { tone: StatusTone; label: string };
 
 // Uma tela só funciona de verdade com uma playlist tocando — agenda é opcional (ver
 // OutputStatusRow em outputs-section.tsx pro vínculo de agenda, mostrado à parte).
+// "Configurada" (não "Pronta"/"No ar") — este semáforo só diz que a tela TEM playlist, não que
+// uma TV está conectada tocando agora. A liveness ("N TVs conectadas") é um sinal à parte no card
+// (ConnectedTvsBadge em outputs-section.tsx) — os dois não devem se confundir.
 export function outputItemStatus(hasPlaylist: boolean): StatusInfo {
-  return hasPlaylist ? { tone: "success", label: "Pronta" } : { tone: "warning", label: "Sem playlist" };
+  return hasPlaylist ? { tone: "success", label: "Configurada" } : { tone: "warning", label: "Sem playlist" };
 }
 
 export function outputsTabStatus(outputs: { id: string }[], hasPlaylistById: Record<string, boolean>): StatusInfo {

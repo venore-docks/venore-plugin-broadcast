@@ -116,3 +116,18 @@ export function hasActivePinBlockForToken(token: string): boolean {
   }
   return false;
 }
+
+// Todos os tokens com pelo menos um bloqueio ativo agora — o poll do admin pinta um aviso no card
+// da tela ("há tentativas de PIN bloqueadas agora") em vez de o operador só descobrir clicando em
+// "Liberar" no escuro. Sem I/O: percorre o Map por processo (mesma pegada de getConnectedOutputIps).
+export function listTokensWithActivePinBlock(): string[] {
+  const now = Date.now();
+  const tokens = new Set<string>();
+  for (const [key, entry] of getAttemptsMap()) {
+    if (entry.blockedUntil && entry.blockedUntil > now) {
+      const token = key.slice(0, key.indexOf("::"));
+      if (token) tokens.add(token);
+    }
+  }
+  return [...tokens];
+}

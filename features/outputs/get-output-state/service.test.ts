@@ -33,6 +33,9 @@ const findAllAgendas = vi.fn();
 const findAllUpcomingAgendaEvents = vi.fn();
 const findAllOutputAgendaLinks = vi.fn();
 const findActiveAlert = vi.fn();
+const findActiveTakeover = vi.fn();
+const findAgendaEventById = vi.fn();
+const findPlaylistScheduleForOutput = vi.fn();
 vi.mock("./store", () => ({
   findOutputByToken: (...args: unknown[]) => findOutputByToken(...args),
   findSceneById: (...args: unknown[]) => findSceneById(...args),
@@ -42,6 +45,9 @@ vi.mock("./store", () => ({
   findAllUpcomingAgendaEvents: (...args: unknown[]) => findAllUpcomingAgendaEvents(...args),
   findAllOutputAgendaLinks: (...args: unknown[]) => findAllOutputAgendaLinks(...args),
   findActiveAlert: (...args: unknown[]) => findActiveAlert(...args),
+  findActiveTakeover: (...args: unknown[]) => findActiveTakeover(...args),
+  findAgendaEventById: (...args: unknown[]) => findAgendaEventById(...args),
+  findPlaylistScheduleForOutput: (...args: unknown[]) => findPlaylistScheduleForOutput(...args),
 }));
 
 describe("getOutputState", () => {
@@ -59,6 +65,9 @@ describe("getOutputState", () => {
     findAllUpcomingAgendaEvents.mockReset();
     findAllOutputAgendaLinks.mockReset();
     findActiveAlert.mockReset();
+    findActiveTakeover.mockReset();
+    findAgendaEventById.mockReset();
+    findPlaylistScheduleForOutput.mockReset();
     // Defaults sensatos pra testes que disparam a resolução (agora a camada "video" também
     // dispara clima/logo/cor de marca) mas não se importam com o valor exato.
     getSetting.mockResolvedValue({ success: false });
@@ -68,6 +77,11 @@ describe("getOutputState", () => {
     // testes que precisam de agenda na rotação sobrescrevem com o vínculo explícito pro outputId
     // usado no teste.
     findAllOutputAgendaLinks.mockResolvedValue([]);
+    // Sem programação de playlist por horário e sem takeover ativo por padrão — os testes de
+    // dayparting/takeover sobrescrevem.
+    findPlaylistScheduleForOutput.mockResolvedValue([]);
+    findActiveTakeover.mockResolvedValue(null);
+    findAgendaEventById.mockResolvedValue(null);
   });
 
   it("fails when the token does not match any output", async () => {
@@ -103,6 +117,11 @@ describe("getOutputState", () => {
         footerOpen: false,
         offline: false,
         tickerEnabled: false,
+        hasPlayableContent: false,
+        fallbackUrl: null,
+        takeoverMessage: null,
+        takeoverMediaUrl: null,
+        takeoverExpiresAt: null,
         scene: null,
         layers: [],
         playlistItemsByPlaylistId: {},
@@ -150,8 +169,8 @@ describe("getOutputState", () => {
     if (!result.success) return;
     expect(result.data.playlistItemsByPlaylistId).toEqual({
       p1: [
-        { id: "item-1", order: 0, kind: "video", durationSeconds: null, url: null, withAudio: true, event: null },
-        { id: "item-2", order: 1, kind: "image", durationSeconds: 15, url: null, withAudio: false, event: null },
+        { id: "item-1", order: 0, kind: "video", label: "intro.mp4", durationSeconds: null, url: null, withAudio: true, event: null },
+        { id: "item-2", order: 1, kind: "image", label: "slide.jpg", durationSeconds: 15, url: null, withAudio: false, event: null },
       ],
     });
     expect(result.data.resolvedAssetUrlByLayerId).toEqual({ l2: "https://blob.example/logo.png" });
@@ -173,8 +192,8 @@ describe("getOutputState", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.data.playlistItemsByPlaylistId.p1).toEqual([
-      { id: "item-1", order: 0, kind: "webpage", durationSeconds: 60, url: "/cursos", withAudio: true, event: null },
-      { id: "item-2", order: 1, kind: "news", durationSeconds: 30, url: null, withAudio: false, event: null },
+      { id: "item-1", order: 0, kind: "webpage", label: "/cursos", durationSeconds: 60, url: "/cursos", withAudio: true, event: null },
+      { id: "item-2", order: 1, kind: "news", label: "Notícias", durationSeconds: 30, url: null, withAudio: false, event: null },
     ]);
   });
 

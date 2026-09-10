@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import * as QRCode from "qrcode";
 import {
   Check,
   ChevronDown,
@@ -13,9 +14,13 @@ import {
   PanelRightOpen,
   Power,
   PowerOff,
+  QrCode,
+  RotateCw,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
+  Siren,
+  Snowflake,
   Trash2,
   Tv,
 } from "lucide-react";
@@ -28,17 +33,32 @@ import { Switch } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { ConfirmDeleteButton } from "./confirm-delete-form";
 import { ListDropdownBadge } from "./list-badge";
-// Importa direto de contracts/, nunca do barrel (@/plugins/broadcast) — mesmo racional de
-// playlists-section.tsx/agenda-section.tsx.
-import type { BroadcastOutputRecord, BroadcastPlaylistRecord } from "../../contracts/types";
+// Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
+// de playlists-section.tsx/agenda-section.tsx.
+import type { BroadcastOutputRecord, BroadcastPlaylistRecord, BroadcastPlaylistScheduleSlot } from "../../contracts/types";
+import type { OutputBeaconSummary } from "../../runtime/output-beacon";
+import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared/playlist-schedule";
 import { STATUS_BORDER_CLASSNAME, StatusBadge } from "./status-dot";
 import { outputItemStatus } from "./status";
 import {
+  bulkOutputActionAction,
+  clearTakeoverAction,
   createOutputAction,
   deleteOutputAction,
+  duplicateOutputAction,
+  publishTakeoverAction,
+  setOutputFrozenAction,
+  setOutputGroupAction,
   getConnectedOutputIpsAction,
+  getOutputPinBlocksAction,
+  getOutputTelemetryAction,
+  reloadOutputAction,
   resetOutputPinAttemptsAction,
+  rotateOutputTokenAction,
   setOutputAgendaScheduleAction,
+  setOutputFallbackAction,
+  setOutputHoursAction,
+  setOutputPlaylistScheduleAction,
   setOutputDrawerAction,
   setOutputFooterAction,
   setOutputOfflineAction,
@@ -57,20 +77,14 @@ const initialState: BroadcastActionState = { error: null };
 const outputToggleInitialState: BroadcastOutputToggleState = { error: null, output: null };
 const playlistInitialState: SetOutputPlaylistState = { error: null, playlistId: null };
 
-// Toda saída nasce com sua cena/camadas fixas já prontas (vídeo + agenda + aviso rápido) — não há
-// mais o que escolher além do nome e da playlist que toca (pedido explícito: "não vamos precisar
-// configurar manualmente as camadas, você já define isso").
-function CreateOutputForm({ playlists }: { playlists: BroadcastPlaylistRecord[] }) {
+// Toda saída nasce com sua cena/camadas fixas já prontas (vídeo + agenda + aviso rápido) E com a
+// própria playlist dedicada ("Playlist da <tela>", modelo 1:1 — ver create-output/store.ts). O
+// operador dá o nome e escolhe um modelo (só ajusta visibilidade inicial da agenda/rodapé — tudo
+// mutável depois no card).
+function CreateOutputForm() {
   const [state, formAction, pending] = useActionState(createOutputAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Saída criada." });
-
-  if (playlists.length === 0) {
-    return (
-      <p className="rounded-panel border border-border bg-card p-3 text-sm text-warning">
-        Crie uma playlist na aba &quot;Playlists&quot; antes de criar uma saída.
-      </p>
-    );
-  }
+  useActionToast({ pending, error: state.error, successMessage: "Tela criada — a playlist dela já foi criada junto." });
+  const [template, setTemplate] = useState("completo");
 
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2 rounded-panel border border-border bg-card p-3">
@@ -79,17 +93,20 @@ function CreateOutputForm({ playlists }: { playlists: BroadcastPlaylistRecord[] 
         <Input id="output-name" name="name" placeholder="TV da recepção" required className="w-56" />
       </div>
       <div className="space-y-1">
-        <label className="text-xs text-muted-foreground" htmlFor="output-playlist">Playlist</label>
-        <Select name="playlistId" required>
-          <SelectTrigger id="output-playlist" className="w-56"><SelectValue placeholder="Escolha uma playlist..." /></SelectTrigger>
+        <label className="text-xs text-muted-foreground" htmlFor="output-template">Modelo</label>
+        <input type="hidden" name="template" value={template} />
+        <Select value={template} onValueChange={setTemplate}>
+          <SelectTrigger id="output-template" className="w-56">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {playlists.map((playlist) => (
-              <SelectItem key={playlist.id} value={playlist.id}>{playlist.name}</SelectItem>
-            ))}
+            <SelectItem value="completo">Completo (vídeo + agenda + rodapé)</SelectItem>
+            <SelectItem value="video-rodape">Vídeo + rodapé (sem agenda)</SelectItem>
+            <SelectItem value="video">Só vídeo (tela cheia)</SelectItem>
           </SelectContent>
         </Select>
       </div>
-      <Button type="submit" disabled={pending}>Nova saída</Button>
+      <Button type="submit" disabled={pending}>Nova tela</Button>
     </form>
   );
 }
@@ -160,6 +177,44 @@ function CopyOutputUrlButton({ token }: { token: string }) {
   );
 }
 
+// QR code do link da TV — digitar `http://192.168.x.x/ext/broadcast/out/recepcao` num controle
+// remoto de TV é o passo mais penoso do fluxo. Com o QR, aponta a câmera do celular (ou um leitor
+// na própria TV) e abre. Gera sob demanda no primeiro "abrir" (o `qrcode` roda no browser e
+// devolve um PNG data URL) — mesmo URL que o botão de copiar usa, pra não divergir.
+function OutputQrToggle({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const path = `/ext/broadcast/out/${token}`;
+  const fullUrl = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+
+  useEffect(() => {
+    if (!open || dataUrl) return;
+    QRCode.toDataURL(fullUrl, { width: 320, margin: 1 })
+      .then(setDataUrl)
+      .catch(() => setDataUrl(null));
+  }, [open, dataUrl, fullUrl]);
+
+  return (
+    <div className="w-full space-y-2">
+      <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setOpen((previous) => !previous)}>
+        <QrCode className="size-4" />
+        {open ? "Ocultar QR code" : "QR code da TV"}
+      </Button>
+      {open && (
+        <div className="flex flex-col items-center gap-1.5 rounded-panel border border-border bg-card p-3">
+          {dataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- data URL local gerado no client, sem otimização de next/image
+            <img src={dataUrl} alt="QR code do link da TV" className="size-40" />
+          ) : (
+            <p className="text-xs text-muted-foreground">Gerando…</p>
+          )}
+          <p className="break-all text-center text-xs text-muted-foreground">{fullUrl}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Cover do card — pedido explícito: "coloque cover image ou preview no lugar da cover imagem".
 // Tela não tem um campo de imagem de capa próprio (não é um recurso de mídia), então a capa É o
 // preview ao vivo da própria saída; por padrão mostra só um retângulo neutro com o ícone de TV
@@ -192,10 +247,44 @@ function useElementWidth() {
 
 function OutputCoverPreview({ token }: { token: string }) {
   const [open, setOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [containerRef, width] = useElementWidth();
   const scale = width > 0 ? width / PREVIEW_DESIGN_WIDTH : 0;
 
   return (
+    <>
+    {/* Simulador em tela cheia — a mesma view de saída (SSE + polling próprios), escalada pro
+        viewport. Só um preview grande; o operador vê a playlist ciclar sem uma TV real. */}
+    {fullscreen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+        <div
+          className="relative shadow-2xl"
+          style={{
+            width: PREVIEW_DESIGN_WIDTH,
+            height: PREVIEW_DESIGN_HEIGHT,
+            transform: `scale(${Math.min(
+              (typeof window !== "undefined" ? window.innerWidth - 32 : PREVIEW_DESIGN_WIDTH) / PREVIEW_DESIGN_WIDTH,
+              (typeof window !== "undefined" ? window.innerHeight - 32 : PREVIEW_DESIGN_HEIGHT) / PREVIEW_DESIGN_HEIGHT,
+            )})`,
+          }}
+        >
+          <iframe
+            src={`/ext/broadcast/out/${token}`}
+            title="Simulador da tela"
+            style={{ width: PREVIEW_DESIGN_WIDTH, height: PREVIEW_DESIGN_HEIGHT, border: 0 }}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="absolute top-4 right-4"
+          onClick={() => setFullscreen(false)}
+        >
+          Fechar
+        </Button>
+      </div>
+    )}
     <div
       // Só -mt (cancela o py do Card) — Card não tem padding horizontal próprio (só as seções
       // internas — CardHeader/CardContent/CardFooter — têm px), então a capa já nasce com a
@@ -221,16 +310,27 @@ function OutputCoverPreview({ token }: { token: string }) {
               pointerEvents: "none",
             }}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute top-2 right-2 bg-card/90"
-            onClick={() => setOpen(false)}
-            aria-label="Fechar preview"
-          >
-            <EyeOff className="size-4" />
-          </Button>
+          <div className="absolute top-2 right-2 flex gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="bg-card/90"
+              onClick={() => setFullscreen(true)}
+            >
+              Tela cheia
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="bg-card/90"
+              onClick={() => setOpen(false)}
+              aria-label="Fechar preview"
+            >
+              <EyeOff className="size-4" />
+            </Button>
+          </div>
         </>
       ) : (
         <button
@@ -243,6 +343,7 @@ function OutputCoverPreview({ token }: { token: string }) {
         </button>
       )}
     </div>
+    </>
   );
 }
 
@@ -341,7 +442,7 @@ function LayerToggleRow({
   // A action devolve BroadcastOutputToggleState (saída atualizada) e NÃO chama revalidatePath — o
   // Switch reflete o clique na hora e reconcilia com o registro devolvido. Ver actions.ts.
   action: (state: BroadcastActionState, formData: FormData) => Promise<BroadcastOutputToggleState>;
-  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline";
+  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline" | "frozen";
   checked: boolean;
   iconOn: ReactNode;
   iconOff: ReactNode;
@@ -527,6 +628,351 @@ function SetOutputAgendaScheduleForm({ output }: { output: BroadcastOutputRecord
   );
 }
 
+// Dayparting — faixas "de tal hora a tal hora, nestes dias, toca ESTA playlist". Quando um slot
+// casa com "agora" (na hora de parede da instituição), a tela troca pra playlist do slot; fora de
+// qualquer slot, volta pra playlist padrão da camada de vídeo. Substitui o conjunto inteiro de
+// uma vez (setOutputPlaylistScheduleAction), mesmo padrão de "reenviar a lista" das outras seções.
+type ScheduleSlotDraft = { days: number; startTime: string; endTime: string; playlistId: string };
+
+function slotToDraft(slot: BroadcastPlaylistScheduleSlot): ScheduleSlotDraft {
+  return {
+    days: slot.days,
+    startTime: minutesToTimeLabel(slot.startMinute),
+    endTime: minutesToTimeLabel(slot.endMinute),
+    playlistId: slot.playlistId,
+  };
+}
+
+function OutputScheduleSection({
+  output,
+  playlists,
+  slots: serverSlots,
+}: {
+  output: BroadcastOutputRecord;
+  playlists: BroadcastPlaylistRecord[];
+  slots: BroadcastPlaylistScheduleSlot[];
+}) {
+  const [drafts, setDrafts] = useState<ScheduleSlotDraft[]>(() => serverSlots.map(slotToDraft));
+  const formRef = useRef<HTMLFormElement>(null);
+  const jsonRef = useRef<HTMLInputElement>(null);
+  const [state, formAction, pending] = useActionState(setOutputPlaylistScheduleAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Programação salva." });
+
+  // Mesma regra do seletor de playlist do card: só a dedicada desta tela + compartilhadas.
+  const selectablePlaylists = playlists.filter(
+    (playlist) => !playlist.ownerOutputId || playlist.ownerOutputId === output.id,
+  );
+
+  function patch(index: number, next: Partial<ScheduleSlotDraft>) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...next } : draft)));
+  }
+  function toggleDay(index: number, bit: number) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, days: draft.days ^ bit } : draft)));
+  }
+  function addSlot() {
+    setDrafts((current) => [
+      ...current,
+      { days: 0b0111110, startTime: "08:00", endTime: "12:00", playlistId: selectablePlaylists[0]?.id ?? "" },
+    ]);
+  }
+  function removeSlot(index: number) {
+    setDrafts((current) => current.filter((_, i) => i !== index));
+  }
+
+  function save() {
+    const serialized = drafts.map((draft) => ({
+      playlistId: draft.playlistId,
+      days: draft.days,
+      startMinute: parseTimeToMinutes(draft.startTime) ?? -1,
+      endMinute: parseTimeToMinutes(draft.endTime) ?? -1,
+    }));
+    if (jsonRef.current) jsonRef.current.value = JSON.stringify(serialized);
+    formRef.current?.requestSubmit();
+  }
+
+  const playlistNameById = new Map(playlists.map((playlist) => [playlist.id, playlist.name]));
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Programação por horário</p>
+        <p className="text-xs text-muted-foreground">
+          Em cada faixa, a tela troca pra playlist escolhida. Fora de qualquer faixa, toca a playlist padrão. Horário da instituição.
+        </p>
+      </div>
+
+      <form ref={formRef} action={formAction} className="hidden">
+        <input type="hidden" name="outputId" value={output.id} />
+        <input type="hidden" name="slots" ref={jsonRef} defaultValue="[]" />
+      </form>
+
+      {drafts.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Sem programação — esta tela toca sempre a playlist padrão.</p>
+      ) : (
+        <div className="space-y-2">
+          {drafts.map((draft, index) => (
+            <div key={index} className="space-y-2 rounded-panel border border-border bg-card p-2.5">
+              <div className="flex flex-wrap gap-1">
+                {DAY_LABELS.map((label, dayIndex) => {
+                  const bit = 1 << dayIndex;
+                  const on = (draft.days & bit) !== 0;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => toggleDay(index, bit)}
+                      className={`rounded-full border px-2 py-0.5 text-xs ${
+                        on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="time"
+                  value={draft.startTime}
+                  onChange={(event) => patch(index, { startTime: event.target.value })}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <input
+                  type="time"
+                  value={draft.endTime}
+                  onChange={(event) => patch(index, { endTime: event.target.value })}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSlot(index)}
+                  aria-label="Remover faixa"
+                  className="ml-auto"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+              <Select value={draft.playlistId} onValueChange={(value) => patch(index, { playlistId: value })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Escolha a playlist desta faixa...">
+                    {playlistNameById.get(draft.playlistId) ?? "Escolha a playlist desta faixa..."}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {selectablePlaylists.map((playlist) => (
+                    <SelectItem key={playlist.id} value={playlist.id}>
+                      {playlist.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={addSlot} disabled={selectablePlaylists.length === 0}>
+          Adicionar faixa
+        </Button>
+        <Button type="button" size="sm" onClick={save} disabled={pending}>
+          Salvar programação
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Rótulo de grupo da tela (texto livre com sugestões dos grupos já existentes). Telas com o mesmo
+// rótulo formam um grupo pras ações em lote (GroupsPanel).
+function OutputGroupField({ output, allGroups }: { output: BroadcastOutputRecord; allGroups: string[] }) {
+  const [state, formAction, pending] = useActionState(setOutputGroupAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Grupo salvo." });
+  const listId = useId();
+  return (
+    <form action={formAction} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="outputId" value={output.id} />
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground" htmlFor={`${output.id}-group`}>Grupo (opcional)</label>
+        <Input
+          id={`${output.id}-group`}
+          name="groupName"
+          defaultValue={output.groupName ?? ""}
+          list={listId}
+          placeholder="Ex: Prédio A"
+          className="w-48"
+        />
+        <datalist id={listId}>
+          {allGroups.map((group) => (
+            <option key={group} value={group} />
+          ))}
+        </datalist>
+      </div>
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>Salvar</Button>
+    </form>
+  );
+}
+
+// Painel de grupos — no topo da aba Telas quando existe pelo menos um grupo. Ações em lote sobre
+// todas as telas do grupo (gate broadcast.manage no handler).
+function GroupBulkButton({ groupName, action, label }: { groupName: string; action: string; label: string }) {
+  const [state, formAction, pending] = useActionState(bulkOutputActionAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Aplicado ao grupo." });
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="groupName" value={groupName} />
+      <input type="hidden" name="action" value={action} />
+      <Button type="submit" size="sm" variant="ghost" disabled={pending}>{label}</Button>
+    </form>
+  );
+}
+
+function GroupsPanel({ outputs }: { outputs: BroadcastOutputRecord[] }) {
+  const counts = new Map<string, number>();
+  for (const output of outputs) {
+    if (output.groupName) counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
+  }
+  const groups = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="space-y-2 rounded-panel border border-border bg-card p-3">
+      <p className="text-sm font-medium text-foreground">Grupos de telas</p>
+      <p className="text-xs text-muted-foreground">Ações em lote pra todas as telas de um grupo.</p>
+      <div className="space-y-1.5">
+        {groups.map(([name, count]) => (
+          <div key={name} className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0">
+            <span className="text-sm font-medium text-foreground">{name}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {count} {count === 1 ? "tela" : "telas"}
+            </span>
+            <div className="ml-auto flex flex-wrap gap-1">
+              <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
+              <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
+              <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Horário de funcionamento — UMA janela (dias + início/fim). Fora dela, a tela entra em modo
+// espera automático (get-output-state força offline). Vazio = sempre no ar. Reaproveita o
+// vocabulário de dias/horário de shared/playlist-schedule.ts (bit 0 = domingo).
+function OutputHoursSection({ output }: { output: BroadcastOutputRecord }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [days, setDays] = useState(output.activeDays ?? 0);
+  const [startTime, setStartTime] = useState(
+    output.activeStartMinute != null ? minutesToTimeLabel(output.activeStartMinute) : "",
+  );
+  const [endTime, setEndTime] = useState(output.activeEndMinute != null ? minutesToTimeLabel(output.activeEndMinute) : "");
+  const [state, formAction, pending] = useActionState(setOutputHoursAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Horário salvo." });
+
+  const configured = output.activeDays != null && output.activeStartMinute != null && output.activeEndMinute != null;
+
+  function clearAndSave() {
+    setDays(0);
+    setStartTime("");
+    setEndTime("");
+    // Deixa o React aplicar antes do submit (os campos são controlados) — mesmo cuidado de outros
+    // forms deste arquivo; um microtask basta aqui porque não há input escondido a sincronizar.
+    queueMicrotask(() => formRef.current?.requestSubmit());
+  }
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Horário de funcionamento</p>
+        <p className="text-xs text-muted-foreground">
+          Fora deste horário a tela entra em espera sozinha. Deixe em branco pra ficar sempre no ar. Horário da instituição.
+        </p>
+      </div>
+      <form ref={formRef} action={formAction} className="space-y-2">
+        <input type="hidden" name="outputId" value={output.id} />
+        <input type="hidden" name="days" value={days} />
+        <input type="hidden" name="startTime" value={startTime} />
+        <input type="hidden" name="endTime" value={endTime} />
+        <div className="flex flex-wrap gap-1">
+          {DAY_LABELS.map((label, dayIndex) => {
+            const bit = 1 << dayIndex;
+            const on = (days & bit) !== 0;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setDays((current) => current ^ bit)}
+                className={`rounded-full border px-2 py-0.5 text-xs ${
+                  on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="time"
+            value={startTime}
+            onChange={(event) => setStartTime(event.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+          <span className="text-xs text-muted-foreground">até</span>
+          <input
+            type="time"
+            value={endTime}
+            onChange={(event) => setEndTime(event.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" disabled={pending}>Salvar horário</Button>
+          {configured && (
+            <Button type="button" variant="ghost" size="sm" onClick={clearAndSave} disabled={pending}>
+              Desligar (sempre no ar)
+            </Button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Fallback de conteúdo — mensagem livre mostrada quando a playlist não tem vídeo tocável (no lugar
+// da tela de espera genérica). A mídia de fallback (imagem/vídeo) já existe no schema/state; a UI
+// pra escolhê-la fica pra um próximo passo — por ora, só a mensagem.
+function OutputFallbackSection({ output }: { output: BroadcastOutputRecord }) {
+  const [state, formAction, pending] = useActionState(setOutputFallbackAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Fallback salvo." });
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Conteúdo de fallback</p>
+        <p className="text-xs text-muted-foreground">
+          Mostrado quando a playlist fica sem vídeo pra tocar — em vez da tela de espera padrão.
+        </p>
+      </div>
+      <form action={formAction} className="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="outputId" value={output.id} />
+        <Input
+          name="message"
+          defaultValue={output.fallbackMessage ?? ""}
+          placeholder="Ex: Programação em atualização"
+          className="min-w-64 flex-1"
+        />
+        <Button type="submit" size="sm" disabled={pending}>Salvar</Button>
+      </form>
+    </div>
+  );
+}
+
 // Agrupa os três liga/desliga de camada numa única lista — pedido explícito: "crie contexto:
 // botões de abrir/fechar e ativar/desativar" (antes, agenda ficava solta no corpo do card e
 // rodapé/ticker ficavam escondidos dentro de "Mais opções", sem nada explicando que os três são a
@@ -581,8 +1027,8 @@ function OutputLayersSection({ output }: { output: BroadcastOutputRecord }) {
           checked={output.tickerEnabled}
           iconOn={<ScrollText className="size-4" />}
           iconOff={<ScrollText className="size-4" />}
-          label="Ticker"
-          description="Texto da agenda rolando no rodapé"
+          label="Faixa de eventos"
+          description="Próximos eventos rolando no rodapé"
           tone="warning"
         />
       </div>
@@ -590,20 +1036,20 @@ function OutputLayersSection({ output }: { output: BroadcastOutputRecord }) {
   );
 }
 
-// "Tela offline" (Fase 11) — chave mestra separada das camadas acima: liga uma tela de espera
-// branded no lugar do conteúdo inteiro, não é "mais uma camada". Reaproveita LayerToggleRow (mesmo
-// padrão otimista, sem revalidatePath — a TV troca via SSE), só numa lista própria com o rótulo/
-// contexto deixando claro o efeito (pedido explícito: "deixar claro o efeito na UI").
+// "Modo espera" (era "Tela offline", Fase 11) — chave mestra separada das camadas acima: liga uma
+// tela de espera branded no lugar do conteúdo inteiro, não é "mais uma camada". "Espera" em vez de
+// "offline" de propósito: é uma escolha do operador (pausar a exibição), não um defeito. Reaproveita
+// LayerToggleRow (mesmo padrão otimista, sem revalidatePath — a TV troca via SSE).
 function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
   return (
     <div className="space-y-2">
       <div>
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Exibição</p>
         <p className="text-xs text-muted-foreground">
-          Com a tela offline, a TV mostra uma tela de espera com a marca do site — não o conteúdo.
+          No modo espera, a TV mostra uma tela de pausa com a marca do site — não o conteúdo.
         </p>
       </div>
-      <div className="overflow-hidden rounded-panel border border-border">
+      <div className="divide-y divide-border/60 overflow-hidden rounded-panel border border-border">
         <LayerToggleRow
           output={output}
           action={setOutputOfflineAction}
@@ -611,9 +1057,20 @@ function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
           checked={output.offline}
           iconOn={<PowerOff className="size-4" />}
           iconOff={<Power className="size-4" />}
-          label="Tela offline"
-          description="Mostra uma tela de espera branded, não o conteúdo"
+          label="Modo espera"
+          description="Pausa a exibição e mostra uma tela de pausa branded"
           tone="warning"
+        />
+        <LayerToggleRow
+          output={output}
+          action={setOutputFrozenAction}
+          fieldName="frozen"
+          checked={output.frozen}
+          iconOn={<Snowflake className="size-4" />}
+          iconOff={<Snowflake className="size-4" />}
+          label="Congelar"
+          description="Trava o item atual — a playlist para de avançar (sem ir pra espera)"
+          tone="accent"
         />
       </div>
     </div>
@@ -688,17 +1145,77 @@ function RemoveOutputPinButton({ outputId, onRemoved }: { outputId: string; onRe
   );
 }
 
-function DeleteOutputButton({ outputId }: { outputId: string }) {
+function DeleteOutputButton({ outputId, dedicatedPlaylistName }: { outputId: string; dedicatedPlaylistName: string | null }) {
+  const description = dedicatedPlaylistName
+    ? `Apagar esta tela? O link para de funcionar e a playlist dedicada "${dedicatedPlaylistName}" (com todos os itens) também é apagada.`
+    : "Apagar esta tela? O link que ela usa para de funcionar.";
   return (
     <ConfirmDeleteButton
       action={deleteOutputAction}
       fields={{ outputId }}
       title="Apagar tela"
-      description="Apagar esta tela? O link que ela usa para de funcionar."
+      description={description}
       successMessage="Saída apagada."
       icon={<Trash2 className="size-4" />}
       label="Apagar tela"
     />
+  );
+}
+
+// "Duplicar tela" — cria "Cópia de X" com playlist dedicada, itens e ajustes de exibição copiados
+// (sem token/PIN/responsáveis/vínculos/programação, ver features/outputs/duplicate-output).
+function DuplicateOutputButton({ outputId }: { outputId: string }) {
+  const [state, formAction, pending] = useActionState(duplicateOutputAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Tela duplicada." });
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="outputId" value={outputId} />
+      <Button type="submit" variant="ghost" size="icon" disabled={pending} aria-label="Duplicar tela">
+        <Copy className="size-4" />
+      </Button>
+    </form>
+  );
+}
+
+// Takeover de urgência — cobre TODAS as telas em tela cheia (evacuação, recado crítico), inclusive
+// as em modo espera. Diferente do aviso rápido (lower third que empurra, e que agora mora na aba
+// Dashboard — ver dashboard-section.tsx). Só mensagem por ora; a imagem existe no schema/state, a
+// UI pra escolhê-la fica pra depois.
+function TakeoverPanel() {
+  const publishFormRef = useRef<HTMLFormElement>(null);
+  const [publishState, publishFormAction, publishPending] = useActionState(publishTakeoverAction, initialState);
+  useActionToast({
+    pending: publishPending,
+    error: publishState.error,
+    successMessage: "Comunicado publicado em todas as telas.",
+    onSuccess: () => publishFormRef.current?.reset(),
+  });
+  const [clearState, clearFormAction, clearPending] = useActionState(clearTakeoverAction, initialState);
+  useActionToast({ pending: clearPending, error: clearState.error, successMessage: "Comunicado removido." });
+
+  return (
+    <div className="space-y-2 rounded-panel border border-destructive/40 bg-destructive/5 p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+        <Siren className="size-4" aria-hidden="true" /> Comunicado de urgência
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Cobre <strong>todas</strong> as telas em tela cheia — inclusive as em modo espera. Some sozinho depois do tempo.
+      </p>
+      <form ref={publishFormRef} action={publishFormAction} className="flex flex-wrap items-end gap-2">
+        <div className="min-w-64 flex-1 space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="takeover-message">Mensagem</label>
+          <Input id="takeover-message" name="message" placeholder="EVACUAÇÃO — sigam para a saída mais próxima" required />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="takeover-duration">Segundos na tela</label>
+          <Input id="takeover-duration" name="durationSeconds" type="number" defaultValue={120} className="w-24" />
+        </div>
+        <Button type="submit" variant="destructive" disabled={publishPending}>Publicar comunicado</Button>
+      </form>
+      <form action={clearFormAction}>
+        <Button type="submit" variant="outline" size="sm" disabled={clearPending}>Remover agora</Button>
+      </form>
+    </div>
   );
 }
 
@@ -742,26 +1259,46 @@ function ConnectedTvsBadge({ connectedIps }: { connectedIps: string[] }) {
   );
 }
 
+// "no ar há 2 h" a partir dos segundos de uptime do beacon.
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return "menos de 1 min";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
+  return `${Math.round(seconds / 86400)} d`;
+}
+
 function OutputStatusRow({
   playlistName,
   agendaNames,
   connectedIps,
+  telemetry,
 }: {
   playlistName: string | null;
   agendaNames: string[];
   connectedIps: string[];
+  telemetry: OutputBeaconSummary[];
 }) {
   const status = outputItemStatus(Boolean(playlistName));
+  const primary = telemetry[0];
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <StatusBadge tone={status.tone}>{playlistName ? `Playlist: ${playlistName}` : status.label}</StatusBadge>
-      {agendaNames.length > 0 && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          {agendaNames.length} {agendaNames.length === 1 ? "agenda" : "agendas"}
-        </span>
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge tone={status.tone}>{playlistName ? `Playlist: ${playlistName}` : status.label}</StatusBadge>
+        {agendaNames.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {agendaNames.length} {agendaNames.length === 1 ? "agenda" : "agendas"}
+          </span>
+        )}
+        <ConnectedTvsBadge connectedIps={connectedIps} />
+      </div>
+      {primary && (
+        <p className="text-xs text-muted-foreground">
+          {primary.viewport.replace("x", "×")} · {primary.browser} · no ar há {formatUptime(primary.uptimeSeconds)}
+          {primary.nowPlaying ? ` · tocando ${primary.nowPlaying}` : ""}
+          {telemetry.length > 1 ? ` · +${telemetry.length - 1}` : ""}
+        </p>
       )}
-      <ConnectedTvsBadge connectedIps={connectedIps} />
     </div>
   );
 }
@@ -772,7 +1309,7 @@ function OutputStatusRow({
 // mesmo racional de status.ts: verde quando protegida, âmbar quando qualquer um com o link abre a
 // tela — o mesmo sinal "precisa de atenção" já usado nos badges de status, aqui em escala de card
 // inteiro em vez de badge pequeno.
-function OutputPinSection({ output }: { output: BroadcastOutputRecord }) {
+function OutputPinSection({ output, pinBlocked = false }: { output: BroadcastOutputRecord; pinBlocked?: boolean }) {
   // Estado otimista do PIN — sem revalidatePath, o painel reflete criar/trocar/remover na hora
   // (SetOutputPinForm.onSaved / RemoveOutputPinButton.onRemoved). Revalidação estrutural remonta
   // via `key` no OutputCard.
@@ -802,6 +1339,11 @@ function OutputPinSection({ output }: { output: BroadcastOutputRecord }) {
               : "Qualquer pessoa com o link abre esta tela. Considere proteger com um PIN."}
           </p>
         </div>
+        {pinBlocked && (
+          <p className="text-xs font-medium text-warning">
+            Há tentativas de PIN bloqueadas nesta tela agora — se for uma TV legítima presa no limite, libere abaixo.
+          </p>
+        )}
         <SetOutputPinForm output={output} isProtected={isProtected} onSaved={setPin} />
         {isProtected && <ResetOutputPinAttemptsButton outputId={output.id} />}
       </div>
@@ -827,6 +1369,24 @@ function ResetOutputPinAttemptsButton({ outputId }: { outputId: string }) {
   );
 }
 
+// "Recarregar a TV agora" — publica o evento SSE "reload" (a TV faz location.reload() sozinha, ver
+// output-canvas.tsx). Pra quando uma TV bugou e ninguém quer ir lá fisicamente. Não é destrutivo,
+// submit direto sem AlertDialog. Gate no handler (broadcast.manage OU outputs.manage + atribuição).
+function ReloadOutputButton({ outputId }: { outputId: string }) {
+  const [state, formAction, pending] = useActionState(reloadOutputAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Sinal de recarregar enviado à TV." });
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="outputId" value={outputId} />
+      <Button type="submit" size="sm" variant="outline" disabled={pending} className="w-full sm:w-auto">
+        <RotateCw className="size-4" />
+        Recarregar a TV agora
+      </Button>
+    </form>
+  );
+}
+
 // Um poll só pra todas as telas juntas (não um por card) — pedido explícito: "mostra também a
 // quantidade de TVs conectadas" + "quero poder saber qual é a TV que conectou". A leitura em si é
 // só um Map lido em memória (ver getConnectedOutputIps, runtime/output-bus.ts), então um intervalo
@@ -834,16 +1394,26 @@ function ResetOutputPinAttemptsButton({ outputId }: { outputId: string }) {
 // visível (evita poll com o admin em segundo plano).
 const CONNECTED_IPS_POLL_MS = 5000;
 
-function useConnectedOutputIps(): Record<string, string[]> {
-  const [ipsByToken, setIpsByToken] = useState<Record<string, string[]>>({});
+type OutputLiveStatus = {
+  ipsByToken: Record<string, string[]>;
+  blockedTokens: Set<string>;
+  telemetryByToken: Record<string, OutputBeaconSummary[]>;
+};
+
+function useOutputLiveStatus(): OutputLiveStatus {
+  const [status, setStatus] = useState<OutputLiveStatus>({ ipsByToken: {}, blockedTokens: new Set(), telemetryByToken: {} });
 
   useEffect(() => {
     let cancelled = false;
 
     async function poll() {
       if (document.visibilityState !== "visible") return;
-      const result = await getConnectedOutputIpsAction();
-      if (!cancelled) setIpsByToken(result);
+      const [ipsByToken, blocked, telemetryByToken] = await Promise.all([
+        getConnectedOutputIpsAction(),
+        getOutputPinBlocksAction(),
+        getOutputTelemetryAction(),
+      ]);
+      if (!cancelled) setStatus({ ipsByToken, blockedTokens: new Set(blocked), telemetryByToken });
     }
 
     poll();
@@ -856,7 +1426,7 @@ function useConnectedOutputIps(): Record<string, string[]> {
     };
   }, []);
 
-  return ipsByToken;
+  return status;
 }
 
 // Card fechável — pedido explícito: "o card de tela pode 'fechar', esconder todas as informações
@@ -872,6 +1442,10 @@ function OutputCard({
   currentPlaylistId,
   agendaNames,
   connectedIps,
+  telemetry,
+  pinBlocked,
+  scheduleSlots,
+  allGroups,
   canManageAll,
 }: {
   output: BroadcastOutputRecord;
@@ -879,6 +1453,10 @@ function OutputCard({
   currentPlaylistId: string | null;
   agendaNames: string[];
   connectedIps: string[];
+  telemetry: OutputBeaconSummary[];
+  pinBlocked: boolean;
+  scheduleSlots: BroadcastPlaylistScheduleSlot[];
+  allGroups: string[];
   canManageAll: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -888,6 +1466,12 @@ function OutputCard({
   const [playlistId, setPlaylistId] = useState(currentPlaylistId);
   const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
   const status = outputItemStatus(Boolean(playlistName));
+  // O seletor de troca de playlist só oferece: a playlist dedicada DESTA tela + playlists
+  // compartilhadas (sem tela dona). A playlist dedicada de OUTRA tela nunca aparece — apontar duas
+  // telas pra mesma playlist dedicada não faz sentido no modelo 1:1 (ver database/schema/index.ts).
+  const selectablePlaylists = playlists.filter(
+    (playlist) => !playlist.ownerOutputId || playlist.ownerOutputId === output.id,
+  );
 
   return (
     <Card className={`gap-3 border-l-4 ${STATUS_BORDER_CLASSNAME[status.tone]}`}>
@@ -904,10 +1488,21 @@ function OutputCard({
           >
             {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </Button>
-          {canManageAll && <DeleteOutputButton outputId={output.id} />}
+          {canManageAll && <DuplicateOutputButton outputId={output.id} />}
+          {canManageAll && (
+            <DeleteOutputButton
+              outputId={output.id}
+              dedicatedPlaylistName={playlists.find((playlist) => playlist.ownerOutputId === output.id)?.name ?? null}
+            />
+          )}
         </CardAction>
         <div className="mt-1">
-          <OutputStatusRow playlistName={playlistName} agendaNames={agendaNames} connectedIps={connectedIps} />
+          <OutputStatusRow
+            playlistName={playlistName}
+            agendaNames={agendaNames}
+            connectedIps={connectedIps}
+            telemetry={telemetry}
+          />
         </div>
       </CardHeader>
       {/* Cada seção com rótulo + frase de contexto curta, separadas por divisor — pedido
@@ -917,22 +1512,50 @@ function OutputCard({
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Playlist</p>
-            <p className="text-xs text-muted-foreground">O que esta tela reproduz em sequência.</p>
+            <p className="text-xs text-muted-foreground">
+              Cada tela já tem a própria playlist — monte o conteúdo dela na aba Playlists. Troque aqui só pra apontar esta tela
+              pra uma playlist compartilhada.
+            </p>
             <SetOutputPlaylistForm
               output={output}
-              playlists={playlists}
+              playlists={selectablePlaylists}
               currentPlaylistId={playlistId}
               onPlaylistChange={setPlaylistId}
             />
           </div>
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputScheduleSection output={output} playlists={playlists} slots={scheduleSlots} />
+            </div>
+          )}
           <div className="border-t border-border/60 pt-4">
             <OutputStandbySection output={output} />
           </div>
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputGroupField output={output} allGroups={allGroups} />
+            </div>
+          )}
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputHoursSection output={output} />
+            </div>
+          )}
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputFallbackSection output={output} />
+            </div>
+          )}
           <div className="border-t border-border/60 pt-4">
             <OutputLayersSection output={output} />
           </div>
           <div className="border-t border-border/60 pt-4">
-            <OutputPinSection output={output} />
+            <OutputPinSection output={output} pinBlocked={pinBlocked} />
+          </div>
+          <div className="border-t border-border/60 pt-4">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Manutenção</p>
+            <p className="mb-2 text-xs text-muted-foreground">Se a TV travou, mande ela recarregar sem ir até lá.</p>
+            <ReloadOutputButton outputId={output.id} />
           </div>
         </CardContent>
       )}
@@ -941,7 +1564,24 @@ function OutputCard({
           link, a ação mais comum do card inteiro; o fundo com tinta de primary reforça o mesmo
           sinal na seção inteira, não só no botão. */}
       <CardFooter className="border-t-primary/20 bg-primary/8">
-        <CopyOutputUrlButton token={output.token} />
+        <div className="w-full space-y-2">
+          <CopyOutputUrlButton token={output.token} />
+          <OutputQrToggle token={output.token} />
+          {canManageAll && (
+            <ConfirmDeleteButton
+              action={rotateOutputTokenAction}
+              fields={{ outputId: output.id }}
+              title="Gerar novo link"
+              description="Gerar um link novo para esta tela? O link atual para de funcionar na hora — você vai precisar reabrir o link novo em cada TV que usava o antigo."
+              confirmLabel="Gerar novo link"
+              successMessage="Link novo gerado."
+              icon={<RotateCw className="size-4" />}
+              label="Gerar novo link"
+              variant="ghost"
+              className="w-full"
+            />
+          )}
+        </div>
       </CardFooter>
     </Card>
   );
@@ -951,23 +1591,40 @@ export function OutputsSection({
   outputs,
   playlists,
   outputPlaylistById,
+  schedulesByOutputId = {},
   canManageAll = true,
   agendaNamesByOutputId = {},
 }: {
   outputs: BroadcastOutputRecord[];
   playlists: BroadcastPlaylistRecord[];
   outputPlaylistById: Record<string, string | null>;
+  schedulesByOutputId?: Record<string, BroadcastPlaylistScheduleSlot[]>;
   // false pra um ator sem broadcast.manage (só broadcast.outputs.manage — "responsável" por
   // telas específicas, ver page.tsx) — esconde criar/apagar tela. Atribuição de responsáveis nunca
   // aparece aqui — é exclusiva do Superadmin, ver responsibles-section.tsx.
   canManageAll?: boolean;
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
-  const connectedIpsByToken = useConnectedOutputIps();
+  const { ipsByToken: connectedIpsByToken, blockedTokens, telemetryByToken } = useOutputLiveStatus();
+  const allGroups = [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort();
 
   return (
     <div className="space-y-4">
-      {canManageAll && <CreateOutputForm playlists={playlists} />}
+      {canManageAll && <TakeoverPanel />}
+      {canManageAll && <GroupsPanel outputs={outputs} />}
+      {canManageAll && <CreateOutputForm />}
+      <p className="text-xs text-muted-foreground">
+        Novo na hora de ligar uma TV?{" "}
+        <a
+          href="/ext/broadcast/setup"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+        >
+          Abrir o guia de configuração
+        </a>{" "}
+        (dá pra imprimir).
+      </p>
       {outputs.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {canManageAll ? "Nenhuma tela cadastrada ainda." : "Nenhuma tela foi atribuída a você ainda."}
@@ -993,6 +1650,10 @@ export function OutputsSection({
             currentPlaylistId={outputPlaylistById[output.id] ?? null}
             agendaNames={agendaNamesByOutputId[output.id] ?? []}
             connectedIps={connectedIpsByToken[output.token] ?? []}
+            telemetry={telemetryByToken[output.token] ?? []}
+            pinBlocked={blockedTokens.has(output.token)}
+            scheduleSlots={schedulesByOutputId[output.id] ?? []}
+            allGroups={allGroups}
             canManageAll={canManageAll}
           />
         ))}

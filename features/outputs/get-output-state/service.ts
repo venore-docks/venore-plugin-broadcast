@@ -11,6 +11,7 @@ import {
   DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
 } from "../../../shared/playback-defaults";
 import { BROADCAST_SETTINGS, type BroadcastAgendaAnimationStyle, type BroadcastAgendaViewSize } from "../../../shared/settings";
+import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
 import { resolveEventEndDate, resolveEventOccurrenceDate } from "../../../shared/weekly-recurrence";
@@ -21,8 +22,10 @@ import {
   findAllAgendas,
   findAllOutputAgendaLinks,
   findAllUpcomingAgendaEvents,
+  findActiveTakeover,
   findLayersBySceneId,
   findOutputByToken,
+  findPlaylistScheduleForOutput,
   findSceneById,
   findVisiblePlaylistItemsByPlaylistId,
 } from "./store";
@@ -40,11 +43,20 @@ function readStringConfig(config: Record<string, unknown>, key: string): string 
 // sourceType. Mesma defesa em profundidade dos outros resolvers do plugin: nunca confia em dado
 // gravado antes sem reconferir a fonte real.
 async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone: string): Promise<PlaylistItemSummary> {
+  // Rótulo pra humano (beacon "tocando 3/8 — X", proof-of-play) — título do operador, senão o nome
+  // do arquivo, senão a URL.
+  const rawLabel =
+    item.title?.trim() ||
+    (item.relativePath ? item.relativePath.split("/").pop() || item.relativePath : null) ||
+    item.url ||
+    null;
+
   if (item.sourceType === "webpage") {
     return {
       id: item.id,
       order: item.order,
       kind: "webpage",
+      label: rawLabel ?? "Página web",
       durationSeconds: item.durationSeconds ?? DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
       url: item.url,
       withAudio: item.withAudio,
@@ -57,6 +69,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
       id: item.id,
       order: item.order,
       kind: "news",
+      label: rawLabel ?? "Notícias",
       durationSeconds: item.durationSeconds ?? DEFAULT_NEWS_BLOCK_DURATION_SECONDS,
       url: null,
       withAudio: false,
@@ -70,6 +83,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
       id: item.id,
       order: item.order,
       kind: "agenda-event",
+      label: rawLabel ?? event?.title ?? "Evento da agenda",
       durationSeconds: item.durationSeconds ?? DEFAULT_AGENDA_EVENT_SLIDE_DURATION_SECONDS,
       url: null,
       withAudio: false,
@@ -90,6 +104,7 @@ async function classifyPlaylistItem(item: BroadcastPlaylistItemRecord, timeZone:
     id: item.id,
     order: item.order,
     kind,
+    label: rawLabel ?? (kind === "image" ? "Imagem" : "Vídeo"),
     durationSeconds: kind === "image" ? (item.durationSeconds ?? DEFAULT_SLIDE_DURATION_SECONDS) : null,
     url: null,
     withAudio: kind === "video" ? item.withAudio : false,
@@ -216,7 +231,25 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const timeZone = await resolveTimeZone();
 
   const scene = output.currentSceneId ? await findSceneById(output.currentSceneId) : null;
-  const layers = scene ? await findLayersBySceneId(scene.id) : [];
+  const sceneLayers = scene ? await findLayersBySceneId(scene.id) : [];
+
+  // Dayparting: se um slot de programação casa com "agora" (parede da instituição), a camada de
+  // vídeo passa a apontar pra playlist do slot NO LUGAR da config.playlistId gravada — o cliente da
+  // view (layer-renderer) nem sabe da troca, só renderiza o que recebe. Sem slot casando, os
+  // layers vão crus, comportamento anterior. Ver shared/playlist-schedule.ts.
+  const scheduledPlaylistId = resolveScheduledPlaylistId(
+    await findPlaylistScheduleForOutput(output.id),
+    new Date(),
+    timeZone,
+  );
+  const layers =
+    scheduledPlaylistId != null
+      ? sceneLayers.map((layer) =>
+          layer.type === "video" && readStringConfig(layer.config, "playlistId")
+            ? { ...layer, config: { ...layer.config, playlistId: scheduledPlaylistId } }
+            : layer,
+        )
+      : sceneLayers;
 
   const videoPlaylistIds = new Set<string>();
   for (const layer of layers) {
@@ -236,6 +269,25 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const anyPlaylistHasNewsItem = Object.values(playlistItemsByPlaylistId).some((items) =>
     items.some((item) => item.kind === "news"),
   );
+  // "O canal é essencialmente vídeo" — mesmo critério de PlaylistLayer.hasPlayableVideo: sem
+  // nenhum item de vídeo tocável, a view cai numa tela de espera (ou no fallback da saída).
+  const hasPlayableContent = Object.values(playlistItemsByPlaylistId).some((items) =>
+    items.some((item) => item.kind === "video"),
+  );
+
+  // Horário de funcionamento: fora da janela → modo espera automático. O toggle manual (offline)
+  // vence por cima. effectiveOffline substitui output.offline daqui pra frente.
+  const effectiveOffline =
+    output.offline ||
+    !isWithinActiveHours(output.activeDays, output.activeStartMinute, output.activeEndMinute, new Date(), timeZone);
+
+  // Fallback de conteúdo: resolvido só se configurado — a view usa quando não há conteúdo tocável.
+  const fallbackUrl = output.fallbackMediaAssetId ? await resolveMediaAssetUrl(output.fallbackMediaAssetId) : null;
+
+  // Takeover — global (não por saída), sempre consultado (uma query barata). A view mostra por
+  // cima de TUDO, inclusive modo espera.
+  const takeover = await findActiveTakeover();
+  const takeoverMediaUrl = takeover?.mediaAssetId ? await resolveMediaAssetUrl(takeover.mediaAssetId) : null;
 
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
   for (const layer of layers) {
@@ -266,8 +318,8 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   // Logo da plataforma é usada tanto como fallback de agenda sem logo própria quanto na
   // BrandFooterBar quanto na StandbyScreen (Fase 11) — a tela de espera precisa da logo e da cor
   // de marca mesmo com o footer fechado, então output.offline entra nas duas condições abaixo.
-  const needsBrandLogo = needsAgenda || output.footerOpen || output.offline;
-  const needsBrandColor = output.footerOpen || output.offline;
+  const needsBrandLogo = needsAgenda || output.footerOpen || effectiveOffline;
+  const needsBrandColor = output.footerOpen || effectiveOffline;
   // Largura da agenda E altura da BrandFooterBar dependem da mesma escala (ver
   // BROADCAST_AGENDA_VIEW_SIZE_SCALE) — precisa dela sempre que qualquer uma das duas aparece.
   const needsAgendaViewSize = needsAgenda || output.footerOpen;
@@ -292,8 +344,15 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       outputId: output.id,
       drawerOpen: output.drawerOpen,
       footerOpen: output.footerOpen,
-      offline: output.offline,
+      offline: effectiveOffline,
+      frozen: output.frozen,
       tickerEnabled: output.tickerEnabled,
+      hasPlayableContent,
+      fallbackUrl,
+      fallbackMessage: output.fallbackMessage,
+      takeoverMessage: takeover?.message ?? null,
+      takeoverMediaUrl,
+      takeoverExpiresAt: takeover ? takeover.expiresAt.toISOString() : null,
       scene,
       layers,
       playlistItemsByPlaylistId,

@@ -22,6 +22,7 @@ import { setOutputAgendaSchedule } from "../../outputs/set-output-agenda-schedul
 import { setOutputDrawer } from "../../outputs/set-output-drawer/service";
 import { setOutputFooter } from "../../outputs/set-output-footer/service";
 import { setOutputOffline } from "../../outputs/set-output-offline/service";
+import { setOutputPlaylist } from "../../outputs/set-output-playlist/service";
 import { setOutputTicker } from "../../outputs/set-output-ticker/service";
 import type {
   BroadcastImportReport,
@@ -302,13 +303,19 @@ export async function importBroadcastBundle(command: ImportBroadcastBundleComman
       continue;
     }
 
-    const createdOutput = await createOutput({ name: output.name, playlistId, actorId: command.actorId });
+    // Toda tela nasce com playlist dedicada 1:1 (createOutput não aceita mais playlistId). O bundle
+    // traz a playlist explícita da tela — reaponta a tela pra ela logo em seguida; a playlist
+    // dedicada recém-criada fica sem uso (mesmo caso de quem aponta a tela pra outra playlist na UI).
+    const createdOutput = await createOutput({ name: output.name, template: "completo", actorId: command.actorId });
     if (!createdOutput.success) {
       record("output", output.ref, "failed", createdOutput.error.message);
       continue;
     }
     const outputId = createdOutput.data.id;
     const notes: string[] = [];
+
+    const attachPlaylistResult = await setOutputPlaylist({ outputId, playlistId, actorId: command.actorId });
+    if (!attachPlaylistResult.success) notes.push(`Playlist: ${attachPlaylistResult.error.message}`);
 
     const footerResult = await setOutputFooter({ outputId, footerOpen: output.footerOpen, actorId: command.actorId });
     if (!footerResult.success) notes.push(`Rodapé: ${footerResult.error.message}`);

@@ -43,6 +43,9 @@ export type BroadcastPlaylistRecord = {
   // Pasta (relativa à raiz configurada em broadcast.rootFolder) varrida pelo scan — null quando a
   // playlist só tem itens do tipo "media-asset"/"webpage".
   folderPath: string | null;
+  // Id da tela dona desta playlist (modelo 1:1 — ver database/schema/index.ts). null = playlist
+  // "compartilhada" criada à mão, sem tela dona.
+  ownerOutputId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -85,6 +88,10 @@ export type BroadcastPlaylistItemRecord = {
   // Só relevante pra item de vídeo e "webpage" — toca o áudio na view em vez de sair mudo. Ver
   // o comentário da coluna with_audio em database/schema/index.ts.
   withAudio: boolean;
+  // Janela de validade opcional (ver database/schema/index.ts) — o item só entra na reprodução
+  // entre os dois; null/null = sempre visível.
+  visibleFrom: Date | null;
+  visibleUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -142,6 +149,28 @@ export type BroadcastAgendaEventRecord = {
   updatedAt: Date;
 };
 
+// Um slot de dayparting de uma tela (ver broadcastOutputPlaylistSchedule em
+// database/schema/index.ts). days: bitmask, bit 0 = domingo ... bit 6 = sábado. start/end em
+// minutos desde a meia-noite (0–1439), fim exclusivo, sem cruzar meia-noite.
+export type BroadcastPlaylistScheduleSlot = {
+  id: string;
+  outputId: string;
+  playlistId: string;
+  days: number;
+  startMinute: number;
+  endMinute: number;
+};
+
+// Comunicado de urgência em tela cheia — cobre todas as telas (ver schema). No máximo um ativo,
+// expira sozinho.
+export type BroadcastTakeoverRecord = {
+  id: string;
+  message: string;
+  mediaAssetId: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+};
+
 // Aviso rápido (lower third / alerta) — no máximo um ativo por vez, expira sozinho (ver schema).
 export type BroadcastAlertRecord = {
   id: string;
@@ -189,6 +218,19 @@ export type BroadcastOutputRecord = {
   // shared/pin-hash.ts), null = sem proteção. Nunca deve ser serializado pro browser (não faz
   // parte de BroadcastOutputState, ver get-output-state).
   pin: string | null;
+  // Fallback de conteúdo (ver database/schema/index.ts) — usado quando a playlist não resolve nada
+  // tocável. null/null = tela de espera padrão.
+  fallbackMediaAssetId: string | null;
+  fallbackMessage: string | null;
+  // Horário de funcionamento (ver database/schema/index.ts) — fora dele a tela entra em modo
+  // espera. null = sem horário (sempre no ar).
+  activeDays: number | null;
+  activeStartMinute: number | null;
+  activeEndMinute: number | null;
+  // Rótulo de grupo pra ações em lote no admin — null = sem grupo.
+  groupName: string | null;
+  // "Congelar" — a playlist para de avançar (item atual fixo) sem ir pra tela de espera.
+  frozen: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -205,6 +247,9 @@ export type PlaylistItemSummary = {
   id: string;
   order: number;
   kind: PlaylistItemKind;
+  // Rótulo pra humano (título do operador → nome do arquivo → URL → tipo). Usado no beacon de
+  // telemetria ("tocando 3/8 — X") e no proof-of-play. Nunca vazio.
+  label: string;
   // Só relevante pra "image"/"webpage"/"news"/"agenda-event" — vídeo usa a duração natural do
   // arquivo (onEnded). Pra "news" é o teto do bloco inteiro (todas as manchetes rodando), não por
   // manchete; pra "agenda-event" é quanto tempo o card do evento fica sozinho na tela.
@@ -251,6 +296,9 @@ export type RegionNewsArticle = {
 // output-canvas.tsx), então basta sinalizar "algo mudou, rebusque". "alert-changed" é global (o
 // alerta não é por saída) — publicado pra todos os tokens; "playlist-changed" é publicado só pro
 // token da saída afetada.
+// "reload" — o admin manda a TV recarregar a página (útil quando uma TV bugou e ninguém quer ir
+// lá fisicamente). O cliente da view faz window.location.reload() ao receber; sem payload. É o
+// único evento que NÃO é "algo mudou, rebusque o estado" — é uma ordem de recarregar.
 export type BroadcastOutputEvent =
   | { type: "scene-changed"; sceneId: string | null }
   | { type: "drawer-changed"; drawerOpen: boolean }
@@ -258,8 +306,14 @@ export type BroadcastOutputEvent =
   | { type: "ticker-changed"; tickerEnabled: boolean }
   | { type: "agenda-schedule-changed"; agendaOpenSeconds: number | null; agendaPauseSeconds: number | null }
   | { type: "offline-changed"; offline: boolean }
+  | { type: "frozen-changed"; frozen: boolean }
   | { type: "alert-changed" }
-  | { type: "playlist-changed" };
+  | { type: "takeover-changed" }
+  | { type: "playlist-changed" }
+  // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
+  // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".
+  | { type: "settings-changed" }
+  | { type: "reload" };
 
 // Snapshot que a própria view de saída reporta sobre si mesma (ver components/output/output-
 // canvas.tsx) — lido direto do DOM (document.querySelector("video") +

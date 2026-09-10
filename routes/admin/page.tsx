@@ -20,6 +20,7 @@ import {
   listAgendaOutputs,
   listAgendas,
   listOutputEditors,
+  listOutputPlaylistSchedules,
   listOutputs,
   listPlaylistEditors,
   listPlaylistItems,
@@ -51,6 +52,7 @@ import { AgendaSection } from "../../components/admin/agenda-section";
 import { ResponsiblesSection } from "../../components/admin/responsibles-section";
 import { ImportExportSection } from "../../components/admin/import-export-section";
 import { DashboardSection } from "../../components/admin/dashboard-section";
+import { OnboardingChecklist } from "../../components/admin/onboarding-checklist";
 
 // Único ponto de entrada do plugin no admin (pedido explícito: "não separe os links na navegação
 // admin") — chegou a existir uma rota satélite por permission (/admin/broadcast/agenda,
@@ -58,11 +60,9 @@ import { DashboardSection } from "../../components/admin/dashboard-section";
 // o quanto mostrar a partir de gate.actor.permissions. broadcast.manage vê tudo; quem só tem
 // broadcast.agenda.manage/broadcast.outputs.manage/broadcast.playlists.manage (responsável
 // atribuído, ver shared/scoped-authorization) vê só a(s) seção(ões) correspondente(s), sem aba
-// nenhuma quando é só uma — uma Tabs de item único é ruído, não navegação. A aba "Administradores"
-// é a única exceção que não segue broadcast.manage: gateada em isSuperadmin puro (pedido explícito:
-// "Superadmin pode definir quem são os administradores de telas, playlists e agendas") — um ator
-// com broadcast.manage mas sem ser superadmin administra o conteúdo, mas não delega acesso a
-// outros.
+// nenhuma quando é só uma — uma Tabs de item único é ruído, não navegação. A aba "Responsáveis"
+// segue o mesmo hasFullAccess das outras (decisão explícita: "qualquer Admin do Estúdio", ou seja
+// broadcast.manage, delega — não mais só Superadmin).
 export default async function BroadcastAdminPage() {
   const gate = await getPluginAdminPageData("broadcast");
   if (!gate.granted) {
@@ -73,10 +73,8 @@ export default async function BroadcastAdminPage() {
   const hasAgendaAccess = hasFullAccess || gate.actor.permissions.includes("broadcast.agenda.manage");
   const hasOutputsAccess = hasFullAccess || gate.actor.permissions.includes("broadcast.outputs.manage");
   const hasPlaylistsAccess = hasFullAccess || gate.actor.permissions.includes("broadcast.playlists.manage");
-  // isSuperadmin já implica hasFullAccess (ver a definição acima) — a aba Administradores nunca
-  // precisa de uma leva própria de dados: tudo que ela usa (outputs/playlists/agendas/editores/
-  // allUsers) já está sendo buscado pelas queries condicionadas a hasFullAccess logo abaixo.
-  const isSuperadmin = gate.actor.isSuperadmin;
+  // A aba "Responsáveis" usa exatamente os mesmos dados já buscados sob hasFullAccess logo abaixo
+  // (outputs/playlists/agendas/editores/allUsers) — nunca precisa de uma leva própria.
 
   // Uma única onda pra tudo que não depende de resultado de outra query (só depende dos flags de
   // permission já resolvidos acima) — as duas rodadas de Promise.all que existiam antes aqui
@@ -93,6 +91,7 @@ export default async function BroadcastAdminPage() {
     agendaEditorsResult,
     outputEditorsResult,
     playlistEditorsResult,
+    outputSchedulesResult,
     usersResult,
     region,
     timezone,
@@ -112,6 +111,7 @@ export default async function BroadcastAdminPage() {
     hasFullAccess ? listAgendaEditors() : Promise.resolve(null),
     hasFullAccess ? listOutputEditors() : Promise.resolve(null),
     hasFullAccess ? listPlaylistEditors() : Promise.resolve(null),
+    hasFullAccess ? listOutputPlaylistSchedules() : Promise.resolve(null),
     hasFullAccess ? listUsers() : Promise.resolve(null),
     hasFullAccess ? getBroadcastRegion() : Promise.resolve(""),
     hasFullAccess ? getBroadcastTimezone() : Promise.resolve(DEFAULT_BROADCAST_TIMEZONE),
@@ -129,6 +129,7 @@ export default async function BroadcastAdminPage() {
   const agendaEditorUserIdsByAgendaId = agendaEditorsResult?.success ? agendaEditorsResult.data : {};
   const outputEditorUserIdsByOutputId = outputEditorsResult?.success ? outputEditorsResult.data : {};
   const playlistEditorUserIdsByPlaylistId = playlistEditorsResult?.success ? playlistEditorsResult.data : {};
+  const outputPlaylistSchedulesByOutputId = outputSchedulesResult?.success ? outputSchedulesResult.data : {};
   const allUsers = usersResult?.success ? usersResult.data : [];
 
   const eventsByAgenda: Record<string, typeof agendaEvents> = {};
@@ -180,11 +181,20 @@ export default async function BroadcastAdminPage() {
     if (playlistId) (outputNamesByPlaylistId[playlistId] ??= []).push(output.name);
   }
 
+  // Miniatura dos itens "media-asset" da playlist (filename/url/contentType) — o resolver ignora
+  // itens sem mediaAssetId, então só resolve os da biblioteca; vídeo local não tem thumb sem
+  // ffmpeg e fica com o ícone. Keyed por item.id (ver resolvePickableMediaById).
+  const playlistItemMediaById = await resolvePickableMediaById(
+    Object.values(itemsByPlaylist).flat(),
+    (item) => item.mediaAssetId,
+  );
+
   const outputsView = (
     <OutputsSection
       outputs={outputs}
       playlists={playlists}
       outputPlaylistById={outputPlaylistById}
+      schedulesByOutputId={outputPlaylistSchedulesByOutputId}
       canManageAll={hasFullAccess}
       agendaNamesByOutputId={agendaNamesByOutputId}
     />
@@ -193,6 +203,7 @@ export default async function BroadcastAdminPage() {
     <PlaylistsSection
       playlists={playlists}
       itemsByPlaylist={itemsByPlaylist}
+      itemMediaById={playlistItemMediaById}
       agendas={agendas}
       agendaEvents={agendaEvents}
       outputNamesByPlaylistId={outputNamesByPlaylistId}
@@ -229,6 +240,8 @@ export default async function BroadcastAdminPage() {
       outputEditorUserIdsByOutputId={outputEditorUserIdsByOutputId}
       playlistEditorUserIdsByPlaylistId={playlistEditorUserIdsByPlaylistId}
       agendaEditorUserIdsByAgendaId={agendaEditorUserIdsByAgendaId}
+      outputPlaylistById={outputPlaylistById}
+      agendaOutputIdsByAgendaId={agendaOutputIdsByAgendaId}
     />
   );
 
@@ -300,9 +313,9 @@ export default async function BroadcastAdminPage() {
       description: "",
       view: settingsView,
     },
-    isSuperadmin && {
+    hasFullAccess && {
       key: "admins",
-      label: "Administradores",
+      label: "Responsáveis",
       icon: <Users aria-hidden="true" />,
       description: "",
       view: adminsView,
@@ -317,6 +330,9 @@ export default async function BroadcastAdminPage() {
       view: <ImportExportSection />,
     },
   ].filter((tab): tab is Exclude<typeof tab, false> => tab !== false);
+
+  const hasScreen = outputs.length > 0;
+  const hasContent = Object.values(itemsByPlaylist).some((items) => items.length > 0);
 
   return (
     <div className="space-y-6">
@@ -340,6 +356,8 @@ export default async function BroadcastAdminPage() {
           ) : undefined
         }
       />
+
+      {hasFullAccess && (!hasScreen || !hasContent) && <OnboardingChecklist hasScreen={hasScreen} hasContent={hasContent} />}
 
       {tabs.length > 1 ? <AdminOverviewNav tabs={tabs} /> : tabs[0]?.view}
     </div>

@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import {
   Clapperboard,
   CalendarDays,
   ChevronDown,
   ChevronUp,
+  Copy,
   Eye,
   EyeOff,
   Gauge,
@@ -17,6 +19,7 @@ import {
   RefreshCw,
   Trash2,
   Tv,
+  Upload,
   Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
@@ -24,6 +27,7 @@ import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { MediaPickerField } from "@venore/plugin-sdk/ui";
+import type { PickableMedia } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { ConfirmAlertDialog, ConfirmDeleteButton } from "./confirm-delete-form";
@@ -48,7 +52,11 @@ import {
   addMetricsBoardPlaylistItemAction,
   addScannedPlaylistItemsAction,
   addWebpagePlaylistItemAction,
+  checkWebpageEmbeddableAction,
   createPlaylistAction,
+  duplicatePlaylistAction,
+  getPlaybackStatsAction,
+  getVideosFolderHealthAction,
   listMetricsBoardOptionsAction,
   deletePlaylistAction,
   deletePlaylistItemAction,
@@ -82,13 +90,161 @@ function CreatePlaylistForm() {
   );
 }
 
-function DeletePlaylistButton({ playlistId }: { playlistId: string }) {
+function DuplicatePlaylistButton({ playlistId }: { playlistId: string }) {
+  const [state, formAction, pending] = useActionState(duplicatePlaylistAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Playlist duplicada." });
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="playlistId" value={playlistId} />
+      <Button type="submit" variant="ghost" size="icon" disabled={pending} aria-label="Duplicar playlist">
+        <Copy className="size-4" />
+      </Button>
+    </form>
+  );
+}
+
+function relativeDays(iso: string): string {
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
+  if (days <= 0) return "hoje";
+  if (days === 1) return "ontem";
+  if (days < 30) return `há ${days} dias`;
+  const months = Math.floor(days / 30);
+  return `há ${months} ${months === 1 ? "mês" : "meses"}`;
+}
+
+// Selo de saúde da pasta compartilhada de vídeos — lido uma vez ao abrir a aba. Sinaliza cedo
+// "a pasta sumiu / o compartilhamento caiu" em vez de o operador só descobrir no "Escanear pasta".
+function VideosFolderHealthBadge() {
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof getVideosFolderHealthAction>>>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVideosFolderHealthAction().then((value) => {
+      if (!cancelled) {
+        setHealth(value);
+        setLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!loaded) return null;
+  if (!health || !health.exists) {
+    return (
+      <p className="text-xs text-warning">
+        ⚠️ A pasta de vídeos do servidor não foi encontrada — confira se o compartilhamento de rede está acessível.
+      </p>
+    );
+  }
+
+  const gb = health.totalBytes / 1024 ** 3;
+  const size = gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(health.totalBytes / 1024 ** 2)} MB`;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Pasta de vídeos: {health.videoCount} {health.videoCount === 1 ? "vídeo" : "vídeos"} · {size}
+      {health.lastModifiedAt ? ` · alterada ${relativeDays(health.lastModifiedAt)}` : ""}
+      {health.otherFileCount > 0
+        ? ` · ${health.otherFileCount} arquivo${health.otherFileCount === 1 ? "" : "s"} não-vídeo ignorado${health.otherFileCount === 1 ? "" : "s"}`
+        : ""}
+    </p>
+  );
+}
+
+// Relatório de exibições (proof-of-play) — carrega sob demanda ao abrir o <details>. Os números
+// vêm do beacon das TVs (uma linha por vez que um item começa a tocar).
+function PlaybackReportPanel() {
+  const [sinceDays, setSinceDays] = useState(7);
+  const [data, setData] = useState<Awaited<ReturnType<typeof getPlaybackStatsAction>>>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    getPlaybackStatsAction(sinceDays).then((result) => {
+      if (!cancelled) {
+        setData(result);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sinceDays]);
+
+  return (
+    <details className="rounded-panel border border-border bg-card p-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-sm font-medium text-foreground">Relatório de exibições</summary>
+      <div className="mt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Período:</span>
+          {[7, 30, 90].map((days) => (
+            <button
+              key={days}
+              type="button"
+              onClick={() => setSinceDays(days)}
+              className={`rounded-full border px-2 py-0.5 text-xs ${
+                sinceDays === days ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              {days} dias
+            </button>
+          ))}
+        </div>
+        {loading && <p className="text-xs text-muted-foreground">Carregando…</p>}
+        {!loading && data && data.stats.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            Nenhuma exibição registrada no período. Os dados começam a ser coletados quando as TVs reportam o que estão tocando.
+          </p>
+        )}
+        {!loading && data && data.stats.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{data.total} exibições no total (top 30 itens).</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1 pr-2 font-medium">Item</th>
+                    <th className="py-1 pr-2 text-right font-medium">Exibições</th>
+                    <th className="py-1 text-right font-medium">Telas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.stats.map((stat) => (
+                    <tr key={stat.itemLabel} className="border-t border-border/60">
+                      <td className="py-1 pr-2 text-foreground">{stat.itemLabel}</td>
+                      <td className="py-1 pr-2 text-right tabular-nums text-foreground">{stat.plays}</td>
+                      <td className="py-1 text-right tabular-nums text-muted-foreground">{stat.screens}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function DeletePlaylistButton({ playlistId, outputNames }: { playlistId: string; outputNames: string[] }) {
+  // Nomeia o estrago — pedido explícito: "Apagar esta playlist? 2 telas ficam sem conteúdo: X, Y".
+  const description =
+    outputNames.length > 0
+      ? `Apagar esta playlist e todos os seus itens? ${outputNames.length === 1 ? "A tela" : "As telas"} ${outputNames.join(
+          ", ",
+        )} ${outputNames.length === 1 ? "fica" : "ficam"} sem conteúdo até você apontar pra outra playlist.`
+      : "Apagar esta playlist e todos os seus itens? Nenhuma tela toca ela no momento.";
   return (
     <ConfirmDeleteButton
       action={deletePlaylistAction}
       fields={{ playlistId }}
       title="Apagar playlist"
-      description="Apagar esta playlist e todos os seus itens? Saídas que a tocam ficam sem playlist até você trocar."
+      description={description}
       successMessage="Playlist removida."
       icon={<Trash2 className="size-4" />}
       label="Apagar playlist"
@@ -209,6 +365,55 @@ function renderItemIcon(item: BroadcastPlaylistItemRecord): ReactNode {
 // pra ficar legível. Só título/duração/url (quando "webpage") são editáveis —
 // relativePath/mediaAssetId/sourceType não, pra não deixar um item de playlist ambíguo (trocar o
 // arquivo é "outro item", ver comentário do CHECK de forma no schema).
+// Aviso antecipado "este site carrega dentro de um iframe na TV?" — botão explícito (não no blur,
+// pra não disparar uma requisição de saída a cada vez que o campo perde o foco). Só aviso, nunca
+// bloqueia adicionar. Ver features/playlists/check-webpage-embeddable.
+function WebpageEmbedHint({ url }: { url: string }) {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof checkWebpageEmbeddableAction>>>(null);
+  const lastCheckedRef = useRef<string | null>(null);
+
+  async function run() {
+    const trimmed = url.trim();
+    if (!trimmed || trimmed.startsWith("/") || !trimmed.startsWith("http")) {
+      setResult(null);
+      return;
+    }
+    if (trimmed === lastCheckedRef.current) return;
+    lastCheckedRef.current = trimmed;
+    setChecking(true);
+    setResult(await checkWebpageEmbeddableAction(trimmed));
+    setChecking(false);
+  }
+
+  if (!url.trim().startsWith("http")) return null;
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={run}
+        disabled={checking}
+        className="text-xs font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+      >
+        Verificar se carrega na TV
+      </button>
+      {checking && <p className="text-xs text-muted-foreground">Verificando…</p>}
+      {result?.embeddable === "likely-blocked" && (
+        <p className="text-xs text-warning">
+          ⚠️ Provavelmente não carrega na TV — {result.reason}. Rotas internas do próprio site sempre funcionam.
+        </p>
+      )}
+      {result?.embeddable === "yes" && (
+        <p className="text-xs text-success">Respondeu sem bloqueio de embed — deve carregar na TV.</p>
+      )}
+      {result?.embeddable === "unknown" && (
+        <p className="text-xs text-muted-foreground">Não deu pra verificar (o site não respondeu a tempo) — teste pelo link acima.</p>
+      )}
+    </div>
+  );
+}
+
 function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRecord; onDone: () => void }) {
   const [state, formAction, pending] = useActionState(updatePlaylistItemAction, initialState);
   useActionToast({ pending, error: state.error, successMessage: "Item atualizado.", onSuccess: onDone });
@@ -256,6 +461,7 @@ function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRec
             value={url}
             onChange={(event) => setUrl(event.target.value)}
           />
+          <WebpageEmbedHint url={url} />
         </div>
       )}
       {/* Duração não se aplica a vídeo (toca pela duração natural do arquivo). */}
@@ -272,6 +478,31 @@ function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRec
         </div>
       )}
       {audioCapable && <AudioToggleField defaultChecked={item.withAudio} />}
+      {/* Validade opcional — o item só toca na TV entre as duas datas. Vazio = sem limite.
+          Interpretado no fuso da instituição (broadcast.timezone), igual às datas da agenda. */}
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">Validade na TV (opcional)</p>
+        <div className="flex flex-wrap gap-2">
+          <label className="space-y-0.5 text-xs text-muted-foreground">
+            <span className="block">Aparece a partir de</span>
+            <Input
+              name="visibleFrom"
+              type="datetime-local"
+              defaultValue={toDatetimeLocalValue(item.visibleFrom)}
+              className="w-52"
+            />
+          </label>
+          <label className="space-y-0.5 text-xs text-muted-foreground">
+            <span className="block">Some depois de</span>
+            <Input
+              name="visibleUntil"
+              type="datetime-local"
+              defaultValue={toDatetimeLocalValue(item.visibleUntil)}
+              className="w-52"
+            />
+          </label>
+        </div>
+      </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={pending}>Salvar</Button>
         <Button type="button" variant="outline" size="sm" onClick={onDone}>Cancelar</Button>
@@ -280,8 +511,36 @@ function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRec
   );
 }
 
+// <input type="datetime-local"> espera "YYYY-MM-DDTHH:mm" em horário local (getters locais do
+// Date, não toISOString) — mesmo helper/racional de toDatetimeLocalValue em agenda-section.tsx.
+function toDatetimeLocalValue(value: Date | string | null): string {
+  if (!value) return "";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Descreve a janela de validade de um item pra lista — null quando o item não tem janela nenhuma.
+// outOfWindow marca "não está tocando agora por causa da validade" (agendado pro futuro ou já
+// expirado) — pinta o item de âmbar, igual ao `hidden`.
+function describeValidityWindow(item: BroadcastPlaylistItemRecord): { label: string; outOfWindow: boolean } | null {
+  if (!item.visibleFrom && !item.visibleUntil) return null;
+  const fmt = (value: Date | string) =>
+    new Date(value).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const now = Date.now();
+  const fromMs = item.visibleFrom ? new Date(item.visibleFrom).getTime() : null;
+  const untilMs = item.visibleUntil ? new Date(item.visibleUntil).getTime() : null;
+
+  if (fromMs != null && fromMs > now) return { label: `⏳ agendado para ${fmt(item.visibleFrom as Date)}`, outOfWindow: true };
+  if (untilMs != null && untilMs < now) return { label: `⛔ expirou em ${fmt(item.visibleUntil as Date)}`, outOfWindow: true };
+  if (untilMs != null) return { label: `visível até ${fmt(item.visibleUntil as Date)}`, outOfWindow: false };
+  return { label: `visível desde ${fmt(item.visibleFrom as Date)}`, outOfWindow: false };
+}
+
 function PlaylistItemRow({
   item,
+  itemMedia,
   agendaEventById,
   dragHandle,
   dragRootProps,
@@ -290,6 +549,7 @@ function PlaylistItemRow({
   isDragging,
 }: {
   item: BroadcastPlaylistItemRecord;
+  itemMedia: PickableMedia | null;
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
   dragHandle: ReactNode;
   dragRootProps: HTMLAttributes<HTMLElement>;
@@ -298,6 +558,7 @@ function PlaylistItemRow({
   isDragging: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const validity = describeValidityWindow(item);
   const referencedEventTitle = item.agendaEventId ? agendaEventById[item.agendaEventId]?.title : undefined;
   const label =
     item.title ??
@@ -325,15 +586,20 @@ function PlaylistItemRow({
       // notar "isto não toca na TV" olhando a lista inteira, sem precisar abrir o menu de cada
       // item pra descobrir.
       className={`touch-none rounded-panel border p-2.5 text-sm cursor-grab active:cursor-grabbing ${
-        item.hidden ? "border-warning-border bg-warning-soft/40" : "border-border bg-card"
+        item.hidden || validity?.outOfWindow ? "border-warning-border bg-warning-soft/40" : "border-border bg-card"
       } ${isDragging ? "opacity-60" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {dragHandle}
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/14 text-foreground">
-            {renderItemIcon(item)}
-          </span>
+          {itemMedia?.contentType?.startsWith("image/") ? (
+            // eslint-disable-next-line @next/next/no-img-element -- miniatura da biblioteca de mídia, sem next/image
+            <img src={itemMedia.url} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/14 text-foreground">
+              {renderItemIcon(item)}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{label}</p>
             <p className="truncate text-xs text-muted-foreground">
@@ -341,6 +607,7 @@ function PlaylistItemRow({
               {item.durationSeconds != null && ` · ${item.durationSeconds}s`}
               {item.hidden && " · escondido"}
             </p>
+            {validity && <p className={`truncate text-xs ${validity.outOfWindow ? "text-warning" : "text-muted-foreground"}`}>{validity.label}</p>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -369,10 +636,12 @@ function PlaylistItemRow({
 function SortablePlaylistItems({
   playlistId,
   items,
+  itemMediaById,
   agendaEventById,
 }: {
   playlistId: string;
   items: BroadcastPlaylistItemRecord[];
+  itemMediaById: Record<string, PickableMedia | null>;
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
 }) {
   const [state, formAction, pending] = useActionState(reorderPlaylistItemsAction, initialState);
@@ -413,6 +682,7 @@ function SortablePlaylistItems({
           return (
             <PlaylistItemRow
               item={item}
+              itemMedia={itemMediaById[item.id] ?? null}
               agendaEventById={agendaEventById}
               dragHandle={dragHandle}
               dragRootProps={dragRootProps}
@@ -580,6 +850,87 @@ function AudioToggleField({ defaultChecked = false }: { defaultChecked?: boolean
   );
 }
 
+// Envia um vídeo do computador do operador direto pra pasta compartilhada de vídeos
+// (public/broadcast/videos) — o servidor grava no MESMO compartilhamento de rede que já é usado
+// largando arquivo na mão, então o arquivo fica visível pra quem usa a pasta pela rede e entra no
+// "Escanear pasta" de qualquer playlist. Não é uma server action: o corpo é o arquivo cru (GB),
+// vai por XMLHttpRequest pra ter barra de progresso (fetch não expõe progresso de upload). No
+// sucesso, router.refresh() recarrega os server components da página (não há revalidatePath aqui).
+const MAX_UPLOAD_BYTES_CLIENT = 4 * 1024 * 1024 * 1024;
+
+function UploadVideoForm({ playlistId, onAdded }: { playlistId: string; onAdded?: () => void }) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFile(file: File) {
+    setError(null);
+    if (file.size > MAX_UPLOAD_BYTES_CLIENT) {
+      setError("Arquivo maior que 4 GB — largue-o direto na pasta de vídeos pela rede.");
+      return;
+    }
+    setProgress(0);
+
+    const params = new URLSearchParams({ playlistId, filename: file.name });
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/broadcast/upload?${params.toString()}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) setProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      setProgress(null);
+      if (inputRef.current) inputRef.current.value = "";
+      if (xhr.status >= 200 && xhr.status < 300) {
+        router.refresh();
+        onAdded?.();
+        return;
+      }
+      try {
+        setError((JSON.parse(xhr.responseText) as { error?: string }).error ?? "Falha no envio.");
+      } catch {
+        setError("Falha no envio.");
+      }
+    };
+    xhr.onerror = () => {
+      setProgress(null);
+      setError("Falha de rede no envio.");
+    };
+    xhr.send(file);
+  }
+
+  const uploading = progress !== null;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        O vídeo vai pra pasta compartilhada de vídeos do servidor — o mesmo lugar de quando alguém larga um arquivo na pasta pela
+        rede. Ele já entra nesta playlist e fica disponível pro &quot;Escanear pasta&quot; das outras.
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".mp4,.webm,video/mp4,video/webm"
+        disabled={uploading}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) handleFile(file);
+        }}
+        className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-card file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+      />
+      {uploading && (
+        <div className="space-y-1">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="text-xs text-muted-foreground">Enviando… {progress}%</p>
+        </div>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 function AddMediaAssetItemForm({ playlistId, onAdded }: { playlistId: string; onAdded?: () => void }) {
   const [state, formAction, pending] = useActionState(addMediaAssetPlaylistItemAction, initialState);
   useActionToast({ pending, error: state.error, successMessage: "Item adicionado.", onSuccess: onAdded });
@@ -653,9 +1004,10 @@ function AddWebpageItemForm({ playlistId, onAdded }: { playlistId: string; onAdd
         <Input id={`${playlistId}-webpage-duration`} name="durationSeconds" type="number" placeholder="60" className="w-32" />
       </div>
       <p className="text-xs text-warning">
-        Muitos sites (Google, redes sociais, bancos) bloqueiam ser exibidos dentro de outra página e vão ficar em branco na TV. Use o
-        link &quot;Testar&quot; acima pra conferir antes de adicionar — rotas internas do próprio site sempre funcionam.
+        Muitos sites (Google, redes sociais, bancos) bloqueiam ser exibidos dentro de outra página e vão ficar em branco na TV.
+        Rotas internas do próprio site sempre funcionam.
       </p>
+      <WebpageEmbedHint url={url} />
       <AudioToggleField />
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">Adicionar</Button>
     </form>
@@ -744,7 +1096,7 @@ function AddAgendaEventItemForm({
   );
 }
 
-type AddItemKind = "scan" | "scan-images" | "media" | "webpage" | "agenda-event" | "metrics-board";
+type AddItemKind = "scan" | "scan-images" | "upload" | "media" | "webpage" | "agenda-event" | "metrics-board";
 
 // Ícone renderizado (não componente) — mesmo racional de renderItemIcon.
 function renderAddOptionIcon(kind: AddItemKind): ReactNode {
@@ -754,6 +1106,8 @@ function renderAddOptionIcon(kind: AddItemKind): ReactNode {
       return <Clapperboard className={className} aria-hidden="true" />;
     case "scan-images":
       return <ImageIcon className={className} aria-hidden="true" />;
+    case "upload":
+      return <Upload className={className} aria-hidden="true" />;
     case "media":
       return <ImageIcon className={className} aria-hidden="true" />;
     case "webpage":
@@ -845,6 +1199,7 @@ function PlaylistAddSection({
   }, []);
 
   const options: { kind: AddItemKind; label: string }[] = [
+    { kind: "upload", label: "Enviar vídeo" },
     ...(playlist.folderPath ? [{ kind: "scan" as const, label: "Vídeos da pasta" }] : []),
     { kind: "scan-images", label: "Imagens da pasta" },
     { kind: "media", label: "Mídia avulsa" },
@@ -878,6 +1233,7 @@ function PlaylistAddSection({
         <div className="rounded-panel border border-border/60 bg-muted/20 p-3">
           {active === "scan" && <ScanPlaylistFlow playlistId={playlist.id} kind="video" onAdded={close} />}
           {active === "scan-images" && <ScanPlaylistFlow playlistId={playlist.id} kind="image" onAdded={close} />}
+          {active === "upload" && <UploadVideoForm playlistId={playlist.id} onAdded={close} />}
           {active === "media" && <AddMediaAssetItemForm playlistId={playlist.id} onAdded={close} />}
           {active === "webpage" && <AddWebpageItemForm playlistId={playlist.id} onAdded={close} />}
           {active === "agenda-event" && (
@@ -902,6 +1258,7 @@ function PlaylistAddSection({
 function PlaylistCard({
   playlist,
   items,
+  itemMediaById,
   agendas,
   agendaEvents,
   agendaEventById,
@@ -910,6 +1267,7 @@ function PlaylistCard({
 }: {
   playlist: BroadcastPlaylistRecord;
   items: BroadcastPlaylistItemRecord[];
+  itemMediaById: Record<string, PickableMedia | null>;
   agendas: BroadcastAgendaRecord[];
   agendaEvents: BroadcastAgendaEventRecord[];
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
@@ -933,10 +1291,21 @@ function PlaylistCard({
           >
             {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </Button>
-          {canManageAll && <DeletePlaylistButton playlistId={playlist.id} />}
+          {canManageAll && <DuplicatePlaylistButton playlistId={playlist.id} />}
+          {/* Playlist dedicada (ownerOutputId) não é apagável aqui — ela morre junto com a tela
+              (delete-output). Só playlist compartilhada (criada à mão) tem o botão. */}
+          {canManageAll && !playlist.ownerOutputId && (
+            <DeletePlaylistButton playlistId={playlist.id} outputNames={outputNames} />
+          )}
         </CardAction>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          {playlist.ownerOutputId && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              <Tv className="size-3" aria-hidden="true" />
+              {outputNames[0] ? `playlist da tela ${outputNames[0]}` : "playlist dedicada a uma tela"}
+            </span>
+          )}
           {/* Pedido explícito: "adiciona uma badge mostrando [...] a quantidade de lugares onde
               essa playlist é usada. Quando clicar, mostra os locais (Telas cadastradas)" — mesmo
               padrão do badge de TVs conectadas em outputs-section.tsx (ListDropdownBadge), só que
@@ -959,7 +1328,12 @@ function PlaylistCard({
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Itens</p>
             <p className="text-xs text-muted-foreground">A ordem aqui é a ordem de reprodução na tela.</p>
             {items.length > 0 ? (
-              <SortablePlaylistItems playlistId={playlist.id} items={items} agendaEventById={agendaEventById} />
+              <SortablePlaylistItems
+                playlistId={playlist.id}
+                items={items}
+                itemMediaById={itemMediaById}
+                agendaEventById={agendaEventById}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">
                 {playlist.folderPath
@@ -986,6 +1360,7 @@ function PlaylistCard({
 export function PlaylistsSection({
   playlists,
   itemsByPlaylist,
+  itemMediaById = {},
   agendas = [],
   agendaEvents = [],
   outputNamesByPlaylistId = {},
@@ -993,6 +1368,9 @@ export function PlaylistsSection({
 }: {
   playlists: BroadcastPlaylistRecord[];
   itemsByPlaylist: Record<string, BroadcastPlaylistItemRecord[]>;
+  // Miniatura (filename/url/contentType) dos itens "media-asset", keyed por item.id — só imagem
+  // ganha thumb; vídeo local fica com o ícone. Default {} pra não quebrar chamadas antigas.
+  itemMediaById?: Record<string, PickableMedia | null>;
   // Usados só pelo picker do item "Evento em destaque" (e pro rótulo dele na lista) — default []
   // pra não quebrar quem já chamava PlaylistsSection sem esses dois props.
   agendas?: BroadcastAgendaRecord[];
@@ -1013,6 +1391,8 @@ export function PlaylistsSection({
 
   return (
     <div className="space-y-4">
+      <VideosFolderHealthBadge />
+      {canManageAll && <PlaybackReportPanel />}
       {canManageAll && <CreatePlaylistForm />}
       {playlists.length === 0 && (
         <p className="text-sm text-muted-foreground">
@@ -1029,6 +1409,7 @@ export function PlaylistsSection({
             key={playlist.id}
             playlist={playlist}
             items={itemsByPlaylist[playlist.id] ?? []}
+            itemMediaById={itemMediaById}
             agendas={agendas}
             agendaEvents={agendaEvents}
             agendaEventById={agendaEventById}

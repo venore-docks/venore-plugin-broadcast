@@ -11,5 +11,15 @@ export function validateUpdatePlaylistItemInput(input: UpdatePlaylistItemInput):
   if (input.url !== undefined && input.url !== null && input.url !== "" && !isValidInternalWebpageRoute(input.url)) {
     return { code: "broadcast.update-playlist-item.invalid_url", message: INVALID_WEBPAGE_ROUTE_MESSAGE };
   }
+  if (
+    input.visibleFrom != null &&
+    input.visibleUntil != null &&
+    input.visibleUntil.getTime() <= input.visibleFrom.getTime()
+  ) {
+    return {
+      code: "broadcast.update-playlist-item.invalid_validity_window",
+      message: "O fim da validade precisa ser depois do início.",
+    };
+  }
   return null;
 }

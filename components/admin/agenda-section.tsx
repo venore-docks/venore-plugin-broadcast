@@ -29,6 +29,7 @@ import { SortableList, type SortableRowRenderProps } from "./sortable-list";
 import {
   createAgendaAction,
   createAgendaEventAction,
+  importAgendaCsvAction,
   deleteAgendaAction,
   deleteAgendaEventAction,
   reorderAgendasAction,
@@ -123,13 +124,48 @@ function EditAgendaForm({ agenda, logoMedia }: { agenda: BroadcastAgendaRecord; 
   );
 }
 
-function DeleteAgendaButton({ agendaId }: { agendaId: string }) {
+// Importa eventos de um CSV colado (título, início, fim, local, descrição). Eventos avulsos —
+// recorrência e datas extras continuam no formulário normal.
+function ImportAgendaCsvForm({ agendaId }: { agendaId: string }) {
+  const [state, formAction, pending] = useActionState(importAgendaCsvAction, { error: null, summary: null });
+  useActionToast({ pending, error: state.error, successMessage: state.summary ? "Importação concluída." : undefined });
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <input type="hidden" name="agendaId" value={agendaId} />
+      <p className="text-xs text-muted-foreground">
+        Colunas (cabeçalho): <span className="font-mono">titulo, inicio, fim, local, descricao</span>. Datas como{" "}
+        <span className="font-mono">2026-03-15 19:30</span>.
+      </p>
+      <Textarea
+        name="csv"
+        rows={5}
+        placeholder={"titulo,inicio,fim,local\nCulto de domingo,2026-03-15 19:00,2026-03-15 20:30,Templo"}
+        className="w-full font-mono text-xs"
+      />
+      <Button type="submit" size="sm" disabled={pending}>Importar CSV</Button>
+      {state.summary && (
+        <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-card p-2 text-xs text-muted-foreground">
+          {state.summary}
+        </pre>
+      )}
+    </form>
+  );
+}
+
+function DeleteAgendaButton({ agendaId, linkedScreenNames }: { agendaId: string; linkedScreenNames: string[] }) {
+  const description =
+    linkedScreenNames.length > 0
+      ? `Apagar esta agenda e todos os seus eventos? ${linkedScreenNames.length === 1 ? "A tela" : "As telas"} ${linkedScreenNames.join(
+          ", ",
+        )} ${linkedScreenNames.length === 1 ? "deixa" : "deixam"} de mostrar esses eventos.`
+      : "Apagar esta agenda e todos os seus eventos? Ela não está vinculada a nenhuma tela.";
   return (
     <ConfirmDeleteButton
       action={deleteAgendaAction}
       fields={{ agendaId }}
       title="Apagar agenda"
-      description="Apagar esta agenda e todos os seus eventos?"
+      description={description}
       successMessage="Agenda removida."
       icon={<Trash2 className="size-4" />}
       label="Remover agenda"
@@ -840,7 +876,12 @@ function AgendaCard({
             >
               {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
             </Button>
-            {canManageAll && <DeleteAgendaButton agendaId={agenda.id} />}
+            {canManageAll && (
+              <DeleteAgendaButton
+                agendaId={agenda.id}
+                linkedScreenNames={outputs.filter((output) => selectedOutputIds.includes(output.id)).map((output) => output.name)}
+              />
+            )}
           </CardAction>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -882,6 +923,15 @@ function AgendaCard({
               </div>
 
               {addingEvent && <CreateAgendaEventForm agendaId={agenda.id} onAdded={() => setAddingEvent(false)} />}
+
+              {canManageAll && (
+                <details className="rounded-panel border border-border/60 bg-muted/20 p-2.5">
+                  <summary className="cursor-pointer text-xs font-medium text-foreground">Importar de planilha (CSV)</summary>
+                  <div className="mt-2">
+                    <ImportAgendaCsvForm agendaId={agenda.id} />
+                  </div>
+                </details>
+              )}
 
               <div className="space-y-2">
                 {events.map((event) => (

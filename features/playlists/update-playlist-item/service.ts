@@ -24,6 +24,9 @@ export async function updatePlaylistItem(command: UpdatePlaylistItemCommand): Pr
     // (garantido pelo CHECK de forma no schema; não deixamos um valor perdido do form vazar aqui).
     url: existing.sourceType === "webpage" ? command.url?.trim() || existing.url || "" : undefined,
     withAudio: command.withAudio,
+    // undefined = não mexe; Date|null = grava (null limpa a borda). Mesma convenção de url/withAudio.
+    visibleFrom: command.visibleFrom,
+    visibleUntil: command.visibleUntil,
   });
 
   endOperation(handle, { success: true });

@@ -36,6 +36,55 @@
       "when": 1788540231461,
       "tag": "0004_familiar_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788983561796,
+      "tag": "0005_screen_owned_playlists",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788998095790,
+      "tag": "0006_playlist_item_validity",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788998382488,
+      "tag": "0007_output_playlist_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789049097790,
+      "tag": "0008_output_fallback_and_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789049803857,
+      "tag": "0009_output_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789050388358,
+      "tag": "0010_playback_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789050603031,
+      "tag": "0011_freeze_and_takeover",
+      "breakpoints": true
     }
   ]
 }

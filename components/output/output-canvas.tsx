@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 // Tipo importado direto da feature, não do barrel (@/plugins/broadcast) — mesmo racional de
 // layer-renderer.tsx: este é um "use client" component, e o barrel arrasta handlers server-only
 // pro bundle do browser.
@@ -10,6 +10,7 @@ import {
   type OutputStageTransform,
 } from "../../shared/output-stage";
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
+import { FreezeContext, NowPlayingContext, type NowPlayingInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
@@ -34,6 +35,13 @@ const DISCONNECTED_AFTER_MS = 45_000;
 // motivo pra ser mais frequente: isto é telemetria pra um admin olhar de vez em quando, não um
 // sinal de controle. Ver get-output-diagnostics/service.ts (BROWSER_STALE_MS = 3x este valor).
 const DIAGNOSTICS_REPORT_MS = 20_000;
+
+// Watchdog de último recurso: se a TV ficar SEM NENHUM sync com o servidor por esse tempo contínuo
+// (SSE morto + todo refetch falhando), um location.reload() dá um estado limpo — resolve o caso
+// clássico de TV ligada há dias com um EventSource travado que nem reconecta, ou um bundle que
+// falhou a carregar parcialmente. Bem acima de DISCONNECTED_AFTER_MS (que só mostra o overlay):
+// primeiro tenta se recuperar sozinha por vários minutos, só recarrega se realmente não voltar.
+const HARD_RELOAD_AFTER_MS = 4 * 60_000;
 
 // Animação CSS pura (@keyframes broadcast-scene-fade, ver <style> abaixo), não mais um
 // useState+useEffect setando opacity depois do mount. Achado real: numa TV com engine JS
@@ -159,6 +167,12 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
             markSynced();
             return;
           }
+          // Ordem explícita do admin pra esta TV recarregar (não é "algo mudou, rebusque"). Ver
+          // BroadcastOutputEvent em contracts/types.ts e features/outputs/reload-output.
+          if (message.type === "reload") {
+            window.location.reload();
+            return;
+          }
           void refetchState();
         };
       } catch {
@@ -177,9 +191,71 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
   // Timer separado que só olha o relógio — não faz rede nenhuma, então não precisa remontar
   // quando `token` muda nem conviver com o efeito de assinatura acima. setState idempotente
   // (mesmo valor não re-renderiza), seguro pra rodar a cada DISCONNECT_CHECK_MS.
+  // Telemetria de volta pro servidor (viewport/navegador/status) — o admin usa pra saber que TV
+  // está de fato no ar e há quanto tempo (ver runtime/output-beacon.ts). clientId estável por
+  // sessão de aba; crypto.randomUUID só existe em contexto seguro (a view roda em HTTP na LAN),
+  // por isso o fallback.
+  const clientIdRef = useRef<string>("");
+  if (!clientIdRef.current) {
+    clientIdRef.current =
+      globalThis.crypto?.randomUUID?.() ?? `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  const beaconStatusRef = useRef("playing");
+  beaconStatusRef.current = state.offline ? "standby" : disconnected ? "disconnected" : "playing";
+
+  // "Qual item toca agora" — reportado pelo PlaylistLayer via NowPlayingContext. Dedupe pra não
+  // re-renderizar toda vez que o layer reemite o mesmo valor.
+  const [nowPlaying, setNowPlayingState] = useState<NowPlayingInfo | null>(null);
+  const reportNowPlaying = useCallback((info: NowPlayingInfo | null) => {
+    setNowPlayingState((prev) => (prev?.itemId === info?.itemId && prev?.index === info?.index ? prev : info));
+  }, []);
+  const nowPlayingRef = useRef<{ text: string | null; itemId: string | null; label: string | null }>({
+    text: null,
+    itemId: null,
+    label: null,
+  });
+  nowPlayingRef.current = nowPlaying
+    ? { text: `${nowPlaying.index}/${nowPlaying.count} — ${nowPlaying.label}`, itemId: nowPlaying.itemId, label: nowPlaying.label }
+    : { text: null, itemId: null, label: null };
+
+  useEffect(() => {
+    const send = () => {
+      try {
+        void fetch(`/api/broadcast/output/${token}/beacon`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            clientId: clientIdRef.current,
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            userAgent: navigator.userAgent,
+            status: beaconStatusRef.current,
+            nowPlaying: nowPlayingRef.current.text,
+            nowPlayingItemId: nowPlayingRef.current.itemId,
+            nowPlayingLabel: nowPlayingRef.current.label,
+          }),
+          keepalive: true,
+        });
+      } catch {
+        // best-effort — a telemetria nunca deve atrapalhar a reprodução.
+      }
+    };
+    send();
+    const interval = setInterval(send, 30_000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const hardReloadTriggeredRef = useRef(false);
   useEffect(() => {
     const interval = setInterval(() => {
-      setDisconnected(Date.now() - lastSyncAtRef.current > DISCONNECTED_AFTER_MS);
+      const staleFor = Date.now() - lastSyncAtRef.current;
+      setDisconnected(staleFor > DISCONNECTED_AFTER_MS);
+      // Watchdog: passou de HARD_RELOAD_AFTER_MS sem nenhum sync → recarrega a página uma vez (o
+      // ref evita disparar de novo se o reload demorar a acontecer). lastSyncAtRef é semeado com
+      // Date.now() na montagem, então logo depois de um reload o contador zera.
+      if (staleFor > HARD_RELOAD_AFTER_MS && !hardReloadTriggeredRef.current) {
+        hardReloadTriggeredRef.current = true;
+        window.location.reload();
+      }
     }, DISCONNECT_CHECK_MS);
     return () => clearInterval(interval);
   }, []);
@@ -272,12 +348,29 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
 
   const visibleAlertMessage = state.activeAlertMessage && !alertExpired ? state.activeAlertMessage : null;
 
+  // Takeover — mesma mecânica de expiração local do aviso rápido (esconde no instante exato de
+  // takeoverExpiresAt em vez de esperar o poll). Cobre TUDO (inclusive modo espera).
+  const [takeoverExpired, setTakeoverExpired] = useState(false);
+  useEffect(() => {
+    if (!state.takeoverExpiresAt) return;
+    const msLeft = Date.parse(state.takeoverExpiresAt) - Date.now();
+    const reset = setTimeout(() => setTakeoverExpired(false), 0);
+    const expire = setTimeout(() => setTakeoverExpired(true), Math.max(0, msLeft));
+    return () => {
+      clearTimeout(reset);
+      clearTimeout(expire);
+    };
+  }, [state.takeoverExpiresAt]);
+  const takeoverActive = !takeoverExpired && Boolean(state.takeoverMessage || state.takeoverMediaUrl);
+
   return (
-    // Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
-    // preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
-    // cinza para HSL 0 0 20%" (= #333333, hue/saturação 0 = cinza puro, só a luminosidade muda).
-    // Hex direto via style, não className, mesmo racional do resto deste canvas (fora do
-    // vocabulário de cor do tema shadcn de propósito).
+    <NowPlayingContext.Provider value={reportNowPlaying}>
+    <FreezeContext.Provider value={state.frozen}>
+    {/* Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
+        preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
+        cinza para HSL 0 0 20%" (= #333333, hue/saturação 0 = cinza puro, só a luminosidade muda).
+        Hex direto via style, não className, mesmo racional do resto deste canvas (fora do
+        vocabulário de cor do tema shadcn de propósito). */}
     <div className="fixed inset-0 overflow-hidden" style={{ background: "#333333" }}>
       {/* Keyframes usados por AgendaLayer/AlertBanner/NewsSlideCard (layer-renderer.tsx) —
           definidos uma vez aqui no root do canvas em vez de um <style> por instância de layer.
@@ -362,6 +455,14 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
             <AlertBanner message={visibleAlertMessage} />
           </>
         )}
+        {/* Fallback de conteúdo da saída — quando a playlist não tem nada tocável E a saída tem
+            fallback configurado, mostra ISSO no lugar da tela de espera genérica do PlaylistLayer.
+            Overlay (por cima do StandbyScreen "no-content" que o PlaylistLayer já renderiza). Sai
+            sozinho quando a playlist volta a ter conteúdo. Não aparece com offline/desconexão
+            (esses têm a própria tela). */}
+        {!state.offline && !disconnected && !state.hasPlayableContent && (state.fallbackUrl || state.fallbackMessage) && (
+          <FallbackScreen url={state.fallbackUrl} message={state.fallbackMessage} />
+        )}
         {/* Overlay de desconexão — SOBRE o último quadro (não substitui como o offline), sai
             sozinho quando a sincronização volta. Não faz sentido empilhar com a tela offline (que
             já é uma StandbyScreen própria e não depende de sync pra estar correta). */}
@@ -369,6 +470,61 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           <StandbyScreen reason="disconnected" brandLogoUrl={state.brandLogoUrl} />
         )}
       </div>
+      {/* Takeover de urgência — FORA do palco escalado, cobre o viewport inteiro por cima de tudo
+          (conteúdo, modo espera, desconexão). Highest z. */}
+      {takeoverActive && (
+        <TakeoverScreen message={state.takeoverMessage} mediaUrl={state.takeoverMediaUrl} />
+      )}
+    </div>
+    </FreezeContext.Provider>
+    </NowPlayingContext.Provider>
+  );
+}
+
+// Comunicado de urgência em tela cheia. Cores fixas (mesma exceção do resto do canvas). Fundo
+// bem escuro + mensagem grande; imagem opcional atrás (object-contain, não corta).
+function TakeoverScreen({ message, mediaUrl }: { message: string | null; mediaUrl: string | null }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden" style={{ background: "#0a0a0a" }}>
+      {mediaUrl && /\.(mp4|webm)(\?|$)/i.test(mediaUrl) ? (
+        <video src={mediaUrl} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-contain" />
+      ) : mediaUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- imagem do takeover servida direto, sem next/image
+        <img src={mediaUrl} alt="" className="absolute inset-0 h-full w-full object-contain" />
+      ) : null}
+      {message && (
+        <p
+          className="relative max-w-[85%] text-center text-5xl font-bold leading-tight"
+          style={{ color: "#FFFFFF", textShadow: "0 4px 24px rgba(0,0,0,0.8)" }}
+        >
+          {message}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Tela de fallback da saída (imagem/vídeo da biblioteca + mensagem livre). Cores fixas — mesma
+// exceção documentada do resto deste canvas (fora do tema shadcn do admin de propósito).
+function FallbackScreen({ url, message }: { url: string | null; message: string | null }) {
+  const isVideo = url ? /\.(mp4|webm)(\?|$)/i.test(url) : false;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ background: "#0f0f0f" }}>
+      {url && isVideo && (
+        <video src={url} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {url && !isVideo && (
+        // eslint-disable-next-line @next/next/no-img-element -- imagem de fallback servida direto, sem next/image
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {message && (
+        <p
+          className="relative max-w-[80%] text-center text-4xl font-semibold"
+          style={{ color: "#FFFFFF", textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}
+        >
+          {message}
+        </p>
+      )}
     </div>
   );
 }
