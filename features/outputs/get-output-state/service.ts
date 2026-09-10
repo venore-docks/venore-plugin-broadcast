@@ -22,6 +22,7 @@ import {
   findAllAgendas,
   findAllOutputAgendaLinks,
   findAllUpcomingAgendaEvents,
+  findActiveTakeover,
   findLayersBySceneId,
   findOutputByToken,
   findPlaylistScheduleForOutput,
@@ -283,6 +284,11 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   // Fallback de conteúdo: resolvido só se configurado — a view usa quando não há conteúdo tocável.
   const fallbackUrl = output.fallbackMediaAssetId ? await resolveMediaAssetUrl(output.fallbackMediaAssetId) : null;
 
+  // Takeover — global (não por saída), sempre consultado (uma query barata). A view mostra por
+  // cima de TUDO, inclusive modo espera.
+  const takeover = await findActiveTakeover();
+  const takeoverMediaUrl = takeover?.mediaAssetId ? await resolveMediaAssetUrl(takeover.mediaAssetId) : null;
+
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
   for (const layer of layers) {
     if (layer.type !== "image") continue;
@@ -339,10 +345,14 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       drawerOpen: output.drawerOpen,
       footerOpen: output.footerOpen,
       offline: effectiveOffline,
+      frozen: output.frozen,
       tickerEnabled: output.tickerEnabled,
       hasPlayableContent,
       fallbackUrl,
       fallbackMessage: output.fallbackMessage,
+      takeoverMessage: takeover?.message ?? null,
+      takeoverMediaUrl,
+      takeoverExpiresAt: takeover ? takeover.expiresAt.toISOString() : null,
       scene,
       layers,
       playlistItemsByPlaylistId,

@@ -16,7 +16,7 @@ import {
 import { isEventHappeningNow } from "../../shared/weekly-recurrence";
 import { isSameZonedCalendarDay } from "../../shared/timezone";
 import { resolveContrastPalette } from "./contrast-palette";
-import { NowPlayingContext } from "./now-playing-context";
+import { FreezeContext, NowPlayingContext } from "./now-playing-context";
 import {
   DEFAULT_AGENDA_BACKGROUND,
   TV_ACCENT_COLOR,
@@ -636,7 +636,13 @@ function PlaylistLayer({
   const timedDurationMs = current && current.kind !== "video" ? (isEmptySlide ? 1000 : current.durationSeconds * 1000) : 0;
   const timedActive = current !== null && current.kind !== "video";
 
-  useTimedAdvance(timedDurationMs, advance, timedActive, manualTick);
+  // "Congelar" (output.frozen, via FreezeContext) — trava o item atual: nem o timer avança, nem o
+  // fim do vídeo. Volta a rodar quando o admin descongela (evento SSE traz frozen=false).
+  const frozen = useContext(FreezeContext);
+  useTimedAdvance(timedDurationMs, advance, timedActive && !frozen, manualTick);
+  const advanceUnlessFrozen = () => {
+    if (!frozen) advance();
+  };
 
   // Reporta "qual item toca agora" pro beacon de telemetria (via NowPlayingContext, provido pelo
   // OutputCanvas). items e slides são 1:1, então items[index] casa com `current`.
@@ -673,7 +679,7 @@ function PlaylistLayer({
         objectFitClassName={objectFitClassName}
         showBlurFill={fillMode === "contain"}
         videoRef={videoRef}
-        onEnded={advance}
+        onEnded={advanceUnlessFrozen}
         onStuck={() => {
           advance();
           setManualTick((tick) => tick + 1);

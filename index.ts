@@ -172,6 +172,9 @@ export { setOutputTickerHandler as setOutputTicker } from "./features/outputs/se
 // Tela de espera branded ligada de propósito pelo admin (Fase 11) — mesmo authorizeOutputActor de
 // setOutputDrawer/setOutputFooter; o service publica "offline-changed" via SSE.
 export { setOutputOfflineHandler as setOutputOffline } from "./features/outputs/set-output-offline/handler";
+// "Congelar" — trava o item atual (playlist para de avançar) sem ir pra tela de espera.
+export { setOutputFrozenHandler as setOutputFrozen } from "./features/outputs/set-output-frozen/handler";
+export type { SetOutputFrozenInput, SetOutputFrozenResult } from "./features/outputs/set-output-frozen/types";
 // Ciclo fixo de abrir/pausar a coluna lateral (janela aberta + janela de pausa, ver
 // database/schema/index.ts) — ver shared/scoped-authorization (mesmo authorizeOutputActor de
 // setOutputDrawer/setOutputFooter) e o scheduler client em output-canvas.tsx.
@@ -328,6 +331,11 @@ export { publishAlertHandler as publishAlert } from "./features/alerts/publish-a
 export { clearAlertHandler as clearAlert } from "./features/alerts/clear-alert/handler";
 export type { PublishAlertInput, PublishAlertResult } from "./features/alerts/publish-alert/types";
 export type { ClearAlertResult } from "./features/alerts/clear-alert/types";
+// Takeover — comunicado de urgência em tela cheia (cobre TODAS as telas, inclusive as em espera).
+export { publishTakeoverHandler as publishTakeover } from "./features/takeover/publish-takeover/handler";
+export { clearTakeoverHandler as clearTakeover } from "./features/takeover/clear-takeover/handler";
+export type { PublishTakeoverInput, PublishTakeoverResult } from "./features/takeover/publish-takeover/types";
+export type { ClearTakeoverResult } from "./features/takeover/clear-takeover/types";
 
 export type {
   BroadcastAgendaRecord,

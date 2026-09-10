@@ -19,6 +19,8 @@ import {
   ScrollText,
   ShieldAlert,
   ShieldCheck,
+  Siren,
+  Snowflake,
   Trash2,
   Tv,
 } from "lucide-react";
@@ -41,9 +43,12 @@ import { outputItemStatus } from "./status";
 import {
   bulkOutputActionAction,
   clearAlertAction,
+  clearTakeoverAction,
   createOutputAction,
   deleteOutputAction,
   duplicateOutputAction,
+  publishTakeoverAction,
+  setOutputFrozenAction,
   setOutputGroupAction,
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
@@ -389,7 +394,7 @@ function LayerToggleRow({
   // A action devolve BroadcastOutputToggleState (saída atualizada) e NÃO chama revalidatePath — o
   // Switch reflete o clique na hora e reconcilia com o registro devolvido. Ver actions.ts.
   action: (state: BroadcastActionState, formData: FormData) => Promise<BroadcastOutputToggleState>;
-  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline";
+  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline" | "frozen";
   checked: boolean;
   iconOn: ReactNode;
   iconOff: ReactNode;
@@ -996,7 +1001,7 @@ function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
           No modo espera, a TV mostra uma tela de pausa com a marca do site — não o conteúdo.
         </p>
       </div>
-      <div className="overflow-hidden rounded-panel border border-border">
+      <div className="divide-y divide-border/60 overflow-hidden rounded-panel border border-border">
         <LayerToggleRow
           output={output}
           action={setOutputOfflineAction}
@@ -1007,6 +1012,17 @@ function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
           label="Modo espera"
           description="Pausa a exibição e mostra uma tela de pausa branded"
           tone="warning"
+        />
+        <LayerToggleRow
+          output={output}
+          action={setOutputFrozenAction}
+          fieldName="frozen"
+          checked={output.frozen}
+          iconOn={<Snowflake className="size-4" />}
+          iconOff={<Snowflake className="size-4" />}
+          label="Congelar"
+          description="Trava o item atual — a playlist para de avançar (sem ir pra espera)"
+          tone="accent"
         />
       </div>
     </div>
@@ -1115,6 +1131,47 @@ function DuplicateOutputButton({ outputId }: { outputId: string }) {
 
 // Global (não por saída) — aparece em toda saída, e some sozinho quando a duração passa; "Remover
 // agora" força isso antes do tempo, se precisar.
+// Takeover de urgência — cobre TODAS as telas em tela cheia (evacuação, recado crítico), inclusive
+// as em modo espera. Diferente do aviso rápido (lower third que empurra). Só mensagem por ora; a
+// imagem existe no schema/state, a UI pra escolhê-la fica pra depois.
+function TakeoverPanel() {
+  const publishFormRef = useRef<HTMLFormElement>(null);
+  const [publishState, publishFormAction, publishPending] = useActionState(publishTakeoverAction, initialState);
+  useActionToast({
+    pending: publishPending,
+    error: publishState.error,
+    successMessage: "Comunicado publicado em todas as telas.",
+    onSuccess: () => publishFormRef.current?.reset(),
+  });
+  const [clearState, clearFormAction, clearPending] = useActionState(clearTakeoverAction, initialState);
+  useActionToast({ pending: clearPending, error: clearState.error, successMessage: "Comunicado removido." });
+
+  return (
+    <div className="space-y-2 rounded-panel border border-destructive/40 bg-destructive/5 p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+        <Siren className="size-4" aria-hidden="true" /> Comunicado de urgência
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Cobre <strong>todas</strong> as telas em tela cheia — inclusive as em modo espera. Some sozinho depois do tempo.
+      </p>
+      <form ref={publishFormRef} action={publishFormAction} className="flex flex-wrap items-end gap-2">
+        <div className="min-w-64 flex-1 space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="takeover-message">Mensagem</label>
+          <Input id="takeover-message" name="message" placeholder="EVACUAÇÃO — sigam para a saída mais próxima" required />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="takeover-duration">Segundos na tela</label>
+          <Input id="takeover-duration" name="durationSeconds" type="number" defaultValue={120} className="w-24" />
+        </div>
+        <Button type="submit" variant="destructive" disabled={publishPending}>Publicar comunicado</Button>
+      </form>
+      <form action={clearFormAction}>
+        <Button type="submit" variant="outline" size="sm" disabled={clearPending}>Remover agora</Button>
+      </form>
+    </div>
+  );
+}
+
 function QuickAlertPanel() {
   const publishFormRef = useRef<HTMLFormElement>(null);
   const [publishState, publishFormAction, publishPending] = useActionState(publishAlertAction, initialState);
@@ -1546,6 +1603,7 @@ export function OutputsSection({
   return (
     <div className="space-y-4">
       {canManageAll && <QuickAlertPanel />}
+      {canManageAll && <TakeoverPanel />}
       {canManageAll && <GroupsPanel outputs={outputs} />}
       {canManageAll && <CreateOutputForm />}
       <p className="text-xs text-muted-foreground">

@@ -9,3 +9,7 @@ import { createContext } from "react";
 export type NowPlayingInfo = { index: number; count: number; label: string; itemId: string };
 
 export const NowPlayingContext = createContext<((info: NowPlayingInfo | null) => void) | null>(null);
+
+// "Congelar" — mesma ponte canvas ↔ layer. Quando true, o PlaylistLayer desliga o timer de avanço
+// e o onEnded do <video>, deixando o item atual fixo.
+export const FreezeContext = createContext(false);

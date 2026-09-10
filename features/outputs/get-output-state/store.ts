@@ -11,6 +11,7 @@ import {
   broadcastOutputs,
   broadcastPlaylistItems,
   broadcastScenes,
+  broadcastTakeover,
 } from "../../../database/schema";
 import { isAgendaEventUpcoming } from "../../../shared/agenda-occurrences";
 import type {
@@ -175,6 +176,20 @@ export async function findActiveAlert(): Promise<{ message: string; expiresAt: D
     .from(broadcastAlerts)
     .where(gt(broadcastAlerts.expiresAt, new Date()))
     .orderBy(desc(broadcastAlerts.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function findActiveTakeover(): Promise<{ message: string; mediaAssetId: string | null; expiresAt: Date } | null> {
+  const [row] = await db
+    .select({
+      message: broadcastTakeover.message,
+      mediaAssetId: broadcastTakeover.mediaAssetId,
+      expiresAt: broadcastTakeover.expiresAt,
+    })
+    .from(broadcastTakeover)
+    .where(gt(broadcastTakeover.expiresAt, new Date()))
+    .orderBy(desc(broadcastTakeover.createdAt))
     .limit(1);
   return row ?? null;
 }

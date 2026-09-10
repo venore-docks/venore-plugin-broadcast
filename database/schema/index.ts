@@ -302,6 +302,10 @@ export const broadcastOutputs = broadcastSchema.table(
     // lote no admin (recarregar todas, pôr/tirar de espera todas). null = sem grupo. Não afeta a
     // view; é só organização do admin.
     groupName: text("group_name"),
+    // "Congelar" — trava o item que está tocando (a playlist para de avançar) sem ir pra tela de
+    // espera. Pra deixar um slide/aviso fixo no ar. O cliente lê via get-output-state + evento
+    // "frozen-changed"; o PlaylistLayer desliga o timer e o onEnded enquanto frozen=true.
+    frozen: boolean("frozen").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -326,6 +330,20 @@ export const broadcastOutputPlaylistSchedule = broadcastSchema.table("output_pla
   days: integer("days").notNull(),
   startMinute: integer("start_minute").notNull(),
   endMinute: integer("end_minute").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// "Takeover" — comunicado de urgência que cobre TODAS as telas em tela cheia (evacuação, recado
+// crítico). Diferente do aviso rápido (broadcast_alerts): o alert é lower-third que empurra o
+// conteúdo; o takeover substitui tudo, inclusive telas em modo espera. Mesma mecânica de "no
+// máximo um ativo por vez, expira sozinho" dos alerts. media_asset_id (opcional, texto solto sem
+// FK — resolução via @/contexts/media em get-output-state) mostra uma imagem em vez de/atrás do
+// texto.
+export const broadcastTakeover = broadcastSchema.table("takeover", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  message: text("message").notNull(),
+  mediaAssetId: text("media_asset_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

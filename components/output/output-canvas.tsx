@@ -10,7 +10,7 @@ import {
   type OutputStageTransform,
 } from "../../shared/output-stage";
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
-import { NowPlayingContext, type NowPlayingInfo } from "./now-playing-context";
+import { FreezeContext, NowPlayingContext, type NowPlayingInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
@@ -300,8 +300,24 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
 
   const visibleAlertMessage = state.activeAlertMessage && !alertExpired ? state.activeAlertMessage : null;
 
+  // Takeover — mesma mecânica de expiração local do aviso rápido (esconde no instante exato de
+  // takeoverExpiresAt em vez de esperar o poll). Cobre TUDO (inclusive modo espera).
+  const [takeoverExpired, setTakeoverExpired] = useState(false);
+  useEffect(() => {
+    if (!state.takeoverExpiresAt) return;
+    const msLeft = Date.parse(state.takeoverExpiresAt) - Date.now();
+    const reset = setTimeout(() => setTakeoverExpired(false), 0);
+    const expire = setTimeout(() => setTakeoverExpired(true), Math.max(0, msLeft));
+    return () => {
+      clearTimeout(reset);
+      clearTimeout(expire);
+    };
+  }, [state.takeoverExpiresAt]);
+  const takeoverActive = !takeoverExpired && Boolean(state.takeoverMessage || state.takeoverMediaUrl);
+
   return (
     <NowPlayingContext.Provider value={reportNowPlaying}>
+    <FreezeContext.Provider value={state.frozen}>
     {/* Fundo do canvas — pedido explícito: "altere o background da view [...] para #404040" (era
         preto puro, bg-black), depois "pode clarear mais, deixa cinza" (#737373), depois "altere de
         cinza para HSL 0 0 20%" (= #333333, hue/saturação 0 = cinza puro, só a luminosidade muda).
@@ -406,8 +422,37 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           <StandbyScreen reason="disconnected" brandLogoUrl={state.brandLogoUrl} />
         )}
       </div>
+      {/* Takeover de urgência — FORA do palco escalado, cobre o viewport inteiro por cima de tudo
+          (conteúdo, modo espera, desconexão). Highest z. */}
+      {takeoverActive && (
+        <TakeoverScreen message={state.takeoverMessage} mediaUrl={state.takeoverMediaUrl} />
+      )}
     </div>
+    </FreezeContext.Provider>
     </NowPlayingContext.Provider>
+  );
+}
+
+// Comunicado de urgência em tela cheia. Cores fixas (mesma exceção do resto do canvas). Fundo
+// bem escuro + mensagem grande; imagem opcional atrás (object-contain, não corta).
+function TakeoverScreen({ message, mediaUrl }: { message: string | null; mediaUrl: string | null }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden" style={{ background: "#0a0a0a" }}>
+      {mediaUrl && /\.(mp4|webm)(\?|$)/i.test(mediaUrl) ? (
+        <video src={mediaUrl} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-contain" />
+      ) : mediaUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- imagem do takeover servida direto, sem next/image
+        <img src={mediaUrl} alt="" className="absolute inset-0 h-full w-full object-contain" />
+      ) : null}
+      {message && (
+        <p
+          className="relative max-w-[85%] text-center text-5xl font-bold leading-tight"
+          style={{ color: "#FFFFFF", textShadow: "0 4px 24px rgba(0,0,0,0.8)" }}
+        >
+          {message}
+        </p>
+      )}
+    </div>
   );
 }
 

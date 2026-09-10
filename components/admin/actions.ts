@@ -13,6 +13,7 @@ import {
   createAgenda,
   createAgendaEvent,
   bulkOutputAction,
+  clearTakeover,
   createOutput,
   createPlaylist,
   delegateOutput,
@@ -29,6 +30,7 @@ import {
   listOutputTelemetry,
   listPlaybackStats,
   publishAlert,
+  publishTakeover,
   reloadOutput,
   reorderAgendas,
   rotateOutputToken,
@@ -42,6 +44,7 @@ import {
   setOutputEditors,
   setOutputFooter,
   setOutputFallback,
+  setOutputFrozen,
   setOutputGroup,
   setOutputHours,
   setOutputOffline,
@@ -903,6 +906,42 @@ export async function clearAlertAction(): Promise<BroadcastActionState> {
   // Sem revalidatePath — mesmo racional de publishAlertAction: a TV reage via SSE, nada no admin
   // depende de um reload pra refletir a remoção.
   return { error: null };
+}
+
+// Takeover de urgência — cobre TODAS as telas em tela cheia. Mesmo racional do aviso rápido (sem
+// revalidatePath, a TV reage via SSE).
+export async function publishTakeoverAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await publishTakeover({
+    message: requireString(formData, "message"),
+    mediaAssetId: requireString(formData, "mediaAssetId") || null,
+    durationSeconds: requireNumber(formData, "durationSeconds", 60),
+  });
+  if (!result.success) return { error: result.error.message };
+  return { error: null };
+}
+
+export async function clearTakeoverAction(): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await clearTakeover();
+  if (!result.success) return { error: result.error.message };
+  return { error: null };
+}
+
+// Congelar / descongelar uma tela — toggle ao vivo, mesmo padrão de setOutputDrawer (devolve a
+// saída atualizada, sem revalidatePath).
+export async function setOutputFrozenAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastOutputToggleState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR, output: null };
+
+  const result = await setOutputFrozen({
+    outputId: requireString(formData, "outputId"),
+    frozen: formData.get("frozen") === "true",
+  });
+  if (!result.success) return { error: result.error.message, output: null };
+
+  return { error: null, output: result.data };
 }
 
 // Passam por contexts/settings direto (setSetting), gateado por settings.manage — mesmo padrão de

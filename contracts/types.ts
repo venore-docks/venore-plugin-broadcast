@@ -161,6 +161,16 @@ export type BroadcastPlaylistScheduleSlot = {
   endMinute: number;
 };
 
+// Comunicado de urgência em tela cheia — cobre todas as telas (ver schema). No máximo um ativo,
+// expira sozinho.
+export type BroadcastTakeoverRecord = {
+  id: string;
+  message: string;
+  mediaAssetId: string | null;
+  expiresAt: Date;
+  createdAt: Date;
+};
+
 // Aviso rápido (lower third / alerta) — no máximo um ativo por vez, expira sozinho (ver schema).
 export type BroadcastAlertRecord = {
   id: string;
@@ -219,6 +229,8 @@ export type BroadcastOutputRecord = {
   activeEndMinute: number | null;
   // Rótulo de grupo pra ações em lote no admin — null = sem grupo.
   groupName: string | null;
+  // "Congelar" — a playlist para de avançar (item atual fixo) sem ir pra tela de espera.
+  frozen: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -294,7 +306,9 @@ export type BroadcastOutputEvent =
   | { type: "ticker-changed"; tickerEnabled: boolean }
   | { type: "agenda-schedule-changed"; agendaOpenSeconds: number | null; agendaPauseSeconds: number | null }
   | { type: "offline-changed"; offline: boolean }
+  | { type: "frozen-changed"; frozen: boolean }
   | { type: "alert-changed" }
+  | { type: "takeover-changed" }
   | { type: "playlist-changed" }
   // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
   // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".

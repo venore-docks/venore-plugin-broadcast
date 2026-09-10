@@ -71,6 +71,13 @@
       "when": 1789050388358,
       "tag": "0009_playback_log",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789050603031,
+      "tag": "0010_freeze_and_takeover",
+      "breakpoints": true
     }
   ]
 }
