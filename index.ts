@@ -182,6 +182,11 @@ export { setOutputFallbackHandler as setOutputFallback } from "./features/output
 export type { SetOutputFallbackInput, SetOutputFallbackResult } from "./features/outputs/set-output-fallback/types";
 export { setOutputHoursHandler as setOutputHours } from "./features/outputs/set-output-hours/handler";
 export type { SetOutputHoursInput, SetOutputHoursResult } from "./features/outputs/set-output-hours/types";
+// Grupos de telas — rótulo por tela + ações em lote (recarregar / modo espera todas do grupo).
+export { setOutputGroupHandler as setOutputGroup } from "./features/outputs/set-output-group/handler";
+export type { SetOutputGroupInput, SetOutputGroupResult } from "./features/outputs/set-output-group/types";
+export { bulkOutputActionHandler as bulkOutputAction } from "./features/outputs/bulk-output-action/handler";
+export type { BulkOutputActionInput, BulkOutputActionResult, BulkOutputActionKind } from "./features/outputs/bulk-output-action/types";
 export { setOutputPinHandler as setOutputPin } from "./features/outputs/set-output-pin/handler";
 // Zera o limitador de tentativas de PIN (brute force) de uma saída — gate igual ao de
 // setOutputPin (broadcast.manage OU broadcast.outputs.manage + atribuição). Contador em memória

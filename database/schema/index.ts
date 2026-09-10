@@ -298,6 +298,10 @@ export const broadcastOutputs = broadcastSchema.table(
     activeDays: integer("active_days"),
     activeStartMinute: integer("active_start_minute"),
     activeEndMinute: integer("active_end_minute"),
+    // Rótulo de grupo (texto livre) — telas com o mesmo `group_name` formam um grupo pra ações em
+    // lote no admin (recarregar todas, pôr/tirar de espera todas). null = sem grupo. Não afeta a
+    // view; é só organização do admin.
+    groupName: text("group_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

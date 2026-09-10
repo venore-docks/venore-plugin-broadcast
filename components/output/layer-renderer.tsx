@@ -16,6 +16,15 @@ import {
 import { isEventHappeningNow } from "../../shared/weekly-recurrence";
 import { isSameZonedCalendarDay } from "../../shared/timezone";
 import { resolveContrastPalette } from "./contrast-palette";
+import {
+  DEFAULT_AGENDA_BACKGROUND,
+  TV_ACCENT_COLOR,
+  TV_ACCENT_COLOR_SOFT,
+  TV_ACCENT_FOREGROUND,
+  TV_ALERT_GRADIENT,
+  TV_HAPPENING_NOW_COLOR,
+  TV_HAPPENING_NOW_FOREGROUND,
+} from "./tv-tokens";
 import { StandbyScreen } from "./standby-screen";
 import type {
   AgendaRotationEntry,
@@ -1335,31 +1344,9 @@ function formatOccurrenceLine(occurrence: EventOccurrence, timeZone: string): st
 }
 
 
-const DEFAULT_AGENDA_BACKGROUND = "#0f0f0f";
-
-// Cor de destaque fixa da view (badge "hoje", fonte de notícia, ponto ativo do rodízio) —
-// independente do tema shadcn do admin de propósito, mesmo racional já documentado acima pra
-// branco/preto/scrim (overlay fixo sobre vídeo/foto, não deve variar com o tema do admin). Antes
-// repetida como literal em 5 lugares — centralizada aqui só pra não copiar o valor cru de novo a
-// cada uso (pedido: "falta... uso do sistema de primary, secondary, accent, etc" — aqui não dá
-// pra usar token shadcn de verdade pelo motivo já documentado, mas dá pra parar de repetir).
-const TV_ACCENT_COLOR = "#F4B000";
-const TV_ACCENT_COLOR_SOFT = "rgba(244,176,0,0.16)";
-const TV_ACCENT_FOREGROUND = "#0F0F0F";
-
-// Gradiente do AlertBanner (vermelho/laranja de aviso) — mesmo racional de TV_ACCENT_COLOR acima.
-const TV_ALERT_GRADIENT = "linear-gradient(90deg, #B3261E, #E8482C)";
-
-// Cor do status "Acontecendo" (evento em andamento) — pedido explícito: "altere a cor do
-// 'acontecendo', em laranja ou amarelo ovo". Antes reusava TV_ALERT_GRADIENT (vermelho), a mesma
-// cor do AlertBanner de aviso urgente — deliberadamente NÃO trocado ali, só nos 3 usos de
-// "Acontecendo" (aqui, no dateBadge/statusPill do AgendaLayer), já que são estados semânticos
-// diferentes (evento em curso vs. aviso/atenção). Laranja vívido, distinto o bastante do dourado de
-// TV_ACCENT_COLOR (usado no badge "Hoje") pra continuar dando pra diferenciar os dois status de
-// relance. Foreground escuro (mesmo valor de TV_ACCENT_FOREGROUND) — texto branco teria contraste
-// ruim num fundo laranja/amarelo claro.
-const TV_HAPPENING_NOW_COLOR = "#FF8A00";
-const TV_HAPPENING_NOW_FOREGROUND = "#0F0F0F";
+// Paleta fixa da view de saída — centralizada em ./tv-tokens.ts (Ponto 9 #6). Continua fora do
+// vocabulário shadcn de propósito (a rota standalone não tem contexto de tema); o racional
+// completo está no cabeçalho daquele módulo.
 
 
 // Painel "premium" pedido explicitamente: logo + nome da agenda em destaque, cards de evento com

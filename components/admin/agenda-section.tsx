@@ -123,13 +123,19 @@ function EditAgendaForm({ agenda, logoMedia }: { agenda: BroadcastAgendaRecord; 
   );
 }
 
-function DeleteAgendaButton({ agendaId }: { agendaId: string }) {
+function DeleteAgendaButton({ agendaId, linkedScreenNames }: { agendaId: string; linkedScreenNames: string[] }) {
+  const description =
+    linkedScreenNames.length > 0
+      ? `Apagar esta agenda e todos os seus eventos? ${linkedScreenNames.length === 1 ? "A tela" : "As telas"} ${linkedScreenNames.join(
+          ", ",
+        )} ${linkedScreenNames.length === 1 ? "deixa" : "deixam"} de mostrar esses eventos.`
+      : "Apagar esta agenda e todos os seus eventos? Ela não está vinculada a nenhuma tela.";
   return (
     <ConfirmDeleteButton
       action={deleteAgendaAction}
       fields={{ agendaId }}
       title="Apagar agenda"
-      description="Apagar esta agenda e todos os seus eventos?"
+      description={description}
       successMessage="Agenda removida."
       icon={<Trash2 className="size-4" />}
       label="Remover agenda"
@@ -840,7 +846,12 @@ function AgendaCard({
             >
               {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
             </Button>
-            {canManageAll && <DeleteAgendaButton agendaId={agenda.id} />}
+            {canManageAll && (
+              <DeleteAgendaButton
+                agendaId={agenda.id}
+                linkedScreenNames={outputs.filter((output) => selectedOutputIds.includes(output.id)).map((output) => output.name)}
+              />
+            )}
           </CardAction>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>

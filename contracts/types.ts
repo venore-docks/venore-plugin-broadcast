@@ -217,6 +217,8 @@ export type BroadcastOutputRecord = {
   activeDays: number | null;
   activeStartMinute: number | null;
   activeEndMinute: number | null;
+  // Rótulo de grupo pra ações em lote no admin — null = sem grupo.
+  groupName: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

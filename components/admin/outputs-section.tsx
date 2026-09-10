@@ -39,10 +39,12 @@ import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared
 import { STATUS_BORDER_CLASSNAME, StatusBadge } from "./status-dot";
 import { outputItemStatus } from "./status";
 import {
+  bulkOutputActionAction,
   clearAlertAction,
   createOutputAction,
   deleteOutputAction,
   duplicateOutputAction,
+  setOutputGroupAction,
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
   getOutputTelemetryAction,
@@ -731,6 +733,81 @@ function OutputScheduleSection({
   );
 }
 
+// Rótulo de grupo da tela (texto livre com sugestões dos grupos já existentes). Telas com o mesmo
+// rótulo formam um grupo pras ações em lote (GroupsPanel).
+function OutputGroupField({ output, allGroups }: { output: BroadcastOutputRecord; allGroups: string[] }) {
+  const [state, formAction, pending] = useActionState(setOutputGroupAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Grupo salvo." });
+  const listId = useId();
+  return (
+    <form action={formAction} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="outputId" value={output.id} />
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground" htmlFor={`${output.id}-group`}>Grupo (opcional)</label>
+        <Input
+          id={`${output.id}-group`}
+          name="groupName"
+          defaultValue={output.groupName ?? ""}
+          list={listId}
+          placeholder="Ex: Prédio A"
+          className="w-48"
+        />
+        <datalist id={listId}>
+          {allGroups.map((group) => (
+            <option key={group} value={group} />
+          ))}
+        </datalist>
+      </div>
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>Salvar</Button>
+    </form>
+  );
+}
+
+// Painel de grupos — no topo da aba Telas quando existe pelo menos um grupo. Ações em lote sobre
+// todas as telas do grupo (gate broadcast.manage no handler).
+function GroupBulkButton({ groupName, action, label }: { groupName: string; action: string; label: string }) {
+  const [state, formAction, pending] = useActionState(bulkOutputActionAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Aplicado ao grupo." });
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="groupName" value={groupName} />
+      <input type="hidden" name="action" value={action} />
+      <Button type="submit" size="sm" variant="ghost" disabled={pending}>{label}</Button>
+    </form>
+  );
+}
+
+function GroupsPanel({ outputs }: { outputs: BroadcastOutputRecord[] }) {
+  const counts = new Map<string, number>();
+  for (const output of outputs) {
+    if (output.groupName) counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
+  }
+  const groups = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="space-y-2 rounded-panel border border-border bg-card p-3">
+      <p className="text-sm font-medium text-foreground">Grupos de telas</p>
+      <p className="text-xs text-muted-foreground">Ações em lote pra todas as telas de um grupo.</p>
+      <div className="space-y-1.5">
+        {groups.map(([name, count]) => (
+          <div key={name} className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0">
+            <span className="text-sm font-medium text-foreground">{name}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {count} {count === 1 ? "tela" : "telas"}
+            </span>
+            <div className="ml-auto flex flex-wrap gap-1">
+              <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
+              <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
+              <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Horário de funcionamento — UMA janela (dias + início/fim). Fora dela, a tela entra em modo
 // espera automático (get-output-state força offline). Vazio = sempre no ar. Reaproveita o
 // vocabulário de dias/horário de shared/playlist-schedule.ts (bit 0 = domingo).
@@ -1004,13 +1081,16 @@ function RemoveOutputPinButton({ outputId, onRemoved }: { outputId: string; onRe
   );
 }
 
-function DeleteOutputButton({ outputId }: { outputId: string }) {
+function DeleteOutputButton({ outputId, dedicatedPlaylistName }: { outputId: string; dedicatedPlaylistName: string | null }) {
+  const description = dedicatedPlaylistName
+    ? `Apagar esta tela? O link para de funcionar e a playlist dedicada "${dedicatedPlaylistName}" (com todos os itens) também é apagada.`
+    : "Apagar esta tela? O link que ela usa para de funcionar.";
   return (
     <ConfirmDeleteButton
       action={deleteOutputAction}
       fields={{ outputId }}
       title="Apagar tela"
-      description="Apagar esta tela? O link que ela usa para de funcionar."
+      description={description}
       successMessage="Saída apagada."
       icon={<Trash2 className="size-4" />}
       label="Apagar tela"
@@ -1299,6 +1379,7 @@ function OutputCard({
   telemetry,
   pinBlocked,
   scheduleSlots,
+  allGroups,
   canManageAll,
 }: {
   output: BroadcastOutputRecord;
@@ -1309,6 +1390,7 @@ function OutputCard({
   telemetry: OutputBeaconSummary[];
   pinBlocked: boolean;
   scheduleSlots: BroadcastPlaylistScheduleSlot[];
+  allGroups: string[];
   canManageAll: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -1341,7 +1423,12 @@ function OutputCard({
             {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </Button>
           {canManageAll && <DuplicateOutputButton outputId={output.id} />}
-          {canManageAll && <DeleteOutputButton outputId={output.id} />}
+          {canManageAll && (
+            <DeleteOutputButton
+              outputId={output.id}
+              dedicatedPlaylistName={playlists.find((playlist) => playlist.ownerOutputId === output.id)?.name ?? null}
+            />
+          )}
         </CardAction>
         <div className="mt-1">
           <OutputStatusRow
@@ -1378,6 +1465,11 @@ function OutputCard({
           <div className="border-t border-border/60 pt-4">
             <OutputStandbySection output={output} />
           </div>
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputGroupField output={output} allGroups={allGroups} />
+            </div>
+          )}
           {canManageAll && (
             <div className="border-t border-border/60 pt-4">
               <OutputHoursSection output={output} />
@@ -1448,10 +1540,12 @@ export function OutputsSection({
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
   const { ipsByToken: connectedIpsByToken, blockedTokens, telemetryByToken } = useOutputLiveStatus();
+  const allGroups = [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort();
 
   return (
     <div className="space-y-4">
       {canManageAll && <QuickAlertPanel />}
+      {canManageAll && <GroupsPanel outputs={outputs} />}
       {canManageAll && <CreateOutputForm />}
       <p className="text-xs text-muted-foreground">
         Novo na hora de ligar uma TV?{" "}
@@ -1493,6 +1587,7 @@ export function OutputsSection({
             telemetry={telemetryByToken[output.token] ?? []}
             pinBlocked={blockedTokens.has(output.token)}
             scheduleSlots={schedulesByOutputId[output.id] ?? []}
+            allGroups={allGroups}
             canManageAll={canManageAll}
           />
         ))}

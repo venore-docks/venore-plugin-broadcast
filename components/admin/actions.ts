@@ -12,6 +12,7 @@ import {
   clearAlert,
   createAgenda,
   createAgendaEvent,
+  bulkOutputAction,
   createOutput,
   createPlaylist,
   delegateOutput,
@@ -40,6 +41,7 @@ import {
   setOutputEditors,
   setOutputFooter,
   setOutputFallback,
+  setOutputGroup,
   setOutputHours,
   setOutputOffline,
   setOutputPin,
@@ -524,6 +526,36 @@ export async function resetOutputPinAttemptsAction(_prevState: BroadcastActionSt
   const result = await resetOutputPinAttempts({ outputId: requireString(formData, "outputId") });
   if (!result.success) return { error: result.error.message };
 
+  return { error: null };
+}
+
+// Rótulo de grupo de uma tela — vazio = tira do grupo.
+export async function setOutputGroupAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await setOutputGroup({
+    outputId: requireString(formData, "outputId"),
+    groupName: requireString(formData, "groupName") || null,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// Ação em lote sobre um grupo de telas (recarregar / modo espera). A TV reage via SSE; offline
+// também grava no banco, então revalidatePath pra refletir o toggle no card.
+export async function bulkOutputActionAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const action = requireString(formData, "action");
+  const result = await bulkOutputAction({
+    groupName: requireString(formData, "groupName"),
+    action: action === "offline-on" || action === "offline-off" ? action : "reload",
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
   return { error: null };
 }
 
