@@ -1,0 +1,20 @@
+{
+  "//": "Este pacote NÃO é buildado isolado — typecheck/test/lint rodam quando sincronizado no host (venore-claudinho), que resolve `@venore/plugin-sdk` por alias de tsconfig. Este arquivo só dá aos editores as mesmas compilerOptions do host; NÃO tem `paths` de propósito (o SDK fica sem resolver aqui, igual a antes). Ver README.md.",
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowJs": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
+  "exclude": ["node_modules"]
+}

@@ -247,10 +247,44 @@ function useElementWidth() {
 
 function OutputCoverPreview({ token }: { token: string }) {
   const [open, setOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [containerRef, width] = useElementWidth();
   const scale = width > 0 ? width / PREVIEW_DESIGN_WIDTH : 0;
 
   return (
+    <>
+    {/* Simulador em tela cheia — a mesma view de saída (SSE + polling próprios), escalada pro
+        viewport. Só um preview grande; o operador vê a playlist ciclar sem uma TV real. */}
+    {fullscreen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+        <div
+          className="relative shadow-2xl"
+          style={{
+            width: PREVIEW_DESIGN_WIDTH,
+            height: PREVIEW_DESIGN_HEIGHT,
+            transform: `scale(${Math.min(
+              (typeof window !== "undefined" ? window.innerWidth - 32 : PREVIEW_DESIGN_WIDTH) / PREVIEW_DESIGN_WIDTH,
+              (typeof window !== "undefined" ? window.innerHeight - 32 : PREVIEW_DESIGN_HEIGHT) / PREVIEW_DESIGN_HEIGHT,
+            )})`,
+          }}
+        >
+          <iframe
+            src={`/ext/broadcast/out/${token}`}
+            title="Simulador da tela"
+            style={{ width: PREVIEW_DESIGN_WIDTH, height: PREVIEW_DESIGN_HEIGHT, border: 0 }}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="absolute top-4 right-4"
+          onClick={() => setFullscreen(false)}
+        >
+          Fechar
+        </Button>
+      </div>
+    )}
     <div
       // Só -mt (cancela o py do Card) — Card não tem padding horizontal próprio (só as seções
       // internas — CardHeader/CardContent/CardFooter — têm px), então a capa já nasce com a
@@ -274,16 +308,27 @@ function OutputCoverPreview({ token }: { token: string }) {
               pointerEvents: "none",
             }}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute top-2 right-2 bg-card/90"
-            onClick={() => setOpen(false)}
-            aria-label="Fechar preview"
-          >
-            <EyeOff className="size-4" />
-          </Button>
+          <div className="absolute top-2 right-2 flex gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="bg-card/90"
+              onClick={() => setFullscreen(true)}
+            >
+              Tela cheia
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="bg-card/90"
+              onClick={() => setOpen(false)}
+              aria-label="Fechar preview"
+            >
+              <EyeOff className="size-4" />
+            </Button>
+          </div>
         </>
       ) : (
         <button
@@ -296,6 +341,7 @@ function OutputCoverPreview({ token }: { token: string }) {
         </button>
       )}
     </div>
+    </>
   );
 }
 

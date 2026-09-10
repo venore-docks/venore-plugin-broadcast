@@ -300,6 +300,8 @@ export { reorderAgendasHandler as reorderAgendas } from "./features/agenda/reord
 export { listAgendasHandler as listAgendas } from "./features/agenda/list-agendas/handler";
 export { deleteAgendaHandler as deleteAgenda } from "./features/agenda/delete-agenda/handler";
 export { createAgendaEventHandler as createAgendaEvent } from "./features/agenda/create-agenda-event/handler";
+export { importAgendaCsvHandler as importAgendaCsv } from "./features/agenda/import-agenda-csv/handler";
+export type { ImportAgendaCsvInput, ImportAgendaCsvResult } from "./features/agenda/import-agenda-csv/types";
 export { updateAgendaEventHandler as updateAgendaEvent } from "./features/agenda/update-agenda-event/handler";
 export { listAgendaEventsHandler as listAgendaEvents } from "./features/agenda/list-agenda-events/handler";
 export { deleteAgendaEventHandler as deleteAgendaEvent } from "./features/agenda/delete-agenda-event/handler";

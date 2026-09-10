@@ -27,6 +27,7 @@ import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { MediaPickerField } from "@venore/plugin-sdk/ui";
+import type { PickableMedia } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { ConfirmAlertDialog, ConfirmDeleteButton } from "./confirm-delete-form";
@@ -539,6 +540,7 @@ function describeValidityWindow(item: BroadcastPlaylistItemRecord): { label: str
 
 function PlaylistItemRow({
   item,
+  itemMedia,
   agendaEventById,
   dragHandle,
   dragRootProps,
@@ -547,6 +549,7 @@ function PlaylistItemRow({
   isDragging,
 }: {
   item: BroadcastPlaylistItemRecord;
+  itemMedia: PickableMedia | null;
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
   dragHandle: ReactNode;
   dragRootProps: HTMLAttributes<HTMLElement>;
@@ -589,9 +592,14 @@ function PlaylistItemRow({
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {dragHandle}
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/14 text-foreground">
-            {renderItemIcon(item)}
-          </span>
+          {itemMedia?.contentType?.startsWith("image/") ? (
+            // eslint-disable-next-line @next/next/no-img-element -- miniatura da biblioteca de mídia, sem next/image
+            <img src={itemMedia.url} alt="" className="size-8 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/14 text-foreground">
+              {renderItemIcon(item)}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{label}</p>
             <p className="truncate text-xs text-muted-foreground">
@@ -628,10 +636,12 @@ function PlaylistItemRow({
 function SortablePlaylistItems({
   playlistId,
   items,
+  itemMediaById,
   agendaEventById,
 }: {
   playlistId: string;
   items: BroadcastPlaylistItemRecord[];
+  itemMediaById: Record<string, PickableMedia | null>;
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
 }) {
   const [state, formAction, pending] = useActionState(reorderPlaylistItemsAction, initialState);
@@ -672,6 +682,7 @@ function SortablePlaylistItems({
           return (
             <PlaylistItemRow
               item={item}
+              itemMedia={itemMediaById[item.id] ?? null}
               agendaEventById={agendaEventById}
               dragHandle={dragHandle}
               dragRootProps={dragRootProps}
@@ -1244,6 +1255,7 @@ function PlaylistAddSection({
 function PlaylistCard({
   playlist,
   items,
+  itemMediaById,
   agendas,
   agendaEvents,
   agendaEventById,
@@ -1252,6 +1264,7 @@ function PlaylistCard({
 }: {
   playlist: BroadcastPlaylistRecord;
   items: BroadcastPlaylistItemRecord[];
+  itemMediaById: Record<string, PickableMedia | null>;
   agendas: BroadcastAgendaRecord[];
   agendaEvents: BroadcastAgendaEventRecord[];
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
@@ -1312,7 +1325,12 @@ function PlaylistCard({
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Itens</p>
             <p className="text-xs text-muted-foreground">A ordem aqui é a ordem de reprodução na tela.</p>
             {items.length > 0 ? (
-              <SortablePlaylistItems playlistId={playlist.id} items={items} agendaEventById={agendaEventById} />
+              <SortablePlaylistItems
+                playlistId={playlist.id}
+                items={items}
+                itemMediaById={itemMediaById}
+                agendaEventById={agendaEventById}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">
                 {playlist.folderPath ? 'Nenhum vídeo ainda — clique em "Vídeos da pasta" abaixo pra escanear.' : "Nenhum item ainda."}
@@ -1337,6 +1355,7 @@ function PlaylistCard({
 export function PlaylistsSection({
   playlists,
   itemsByPlaylist,
+  itemMediaById = {},
   agendas = [],
   agendaEvents = [],
   outputNamesByPlaylistId = {},
@@ -1344,6 +1363,9 @@ export function PlaylistsSection({
 }: {
   playlists: BroadcastPlaylistRecord[];
   itemsByPlaylist: Record<string, BroadcastPlaylistItemRecord[]>;
+  // Miniatura (filename/url/contentType) dos itens "media-asset", keyed por item.id — só imagem
+  // ganha thumb; vídeo local fica com o ícone. Default {} pra não quebrar chamadas antigas.
+  itemMediaById?: Record<string, PickableMedia | null>;
   // Usados só pelo picker do item "Evento em destaque" (e pro rótulo dele na lista) — default []
   // pra não quebrar quem já chamava PlaylistsSection sem esses dois props.
   agendas?: BroadcastAgendaRecord[];
@@ -1382,6 +1404,7 @@ export function PlaylistsSection({
             key={playlist.id}
             playlist={playlist}
             items={itemsByPlaylist[playlist.id] ?? []}
+            itemMediaById={itemMediaById}
             agendas={agendas}
             agendaEvents={agendaEvents}
             agendaEventById={agendaEventById}

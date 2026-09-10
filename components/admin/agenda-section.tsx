@@ -29,6 +29,7 @@ import { SortableList, type SortableRowRenderProps } from "./sortable-list";
 import {
   createAgendaAction,
   createAgendaEventAction,
+  importAgendaCsvAction,
   deleteAgendaAction,
   deleteAgendaEventAction,
   reorderAgendasAction,
@@ -119,6 +120,35 @@ function EditAgendaForm({ agenda, logoMedia }: { agenda: BroadcastAgendaRecord; 
       </div>
       <MediaPickerField name="logoMediaAssetId" label="Logo da agenda" initialMedia={logoMedia} />
       <Button type="submit" size="sm" disabled={pending}>Salvar</Button>
+    </form>
+  );
+}
+
+// Importa eventos de um CSV colado (título, início, fim, local, descrição). Eventos avulsos —
+// recorrência e datas extras continuam no formulário normal.
+function ImportAgendaCsvForm({ agendaId }: { agendaId: string }) {
+  const [state, formAction, pending] = useActionState(importAgendaCsvAction, { error: null, summary: null });
+  useActionToast({ pending, error: state.error, successMessage: state.summary ? "Importação concluída." : undefined });
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <input type="hidden" name="agendaId" value={agendaId} />
+      <p className="text-xs text-muted-foreground">
+        Colunas (cabeçalho): <span className="font-mono">titulo, inicio, fim, local, descricao</span>. Datas como{" "}
+        <span className="font-mono">2026-03-15 19:30</span>.
+      </p>
+      <Textarea
+        name="csv"
+        rows={5}
+        placeholder={"titulo,inicio,fim,local\nCulto de domingo,2026-03-15 19:00,2026-03-15 20:30,Templo"}
+        className="w-full font-mono text-xs"
+      />
+      <Button type="submit" size="sm" disabled={pending}>Importar CSV</Button>
+      {state.summary && (
+        <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-card p-2 text-xs text-muted-foreground">
+          {state.summary}
+        </pre>
+      )}
     </form>
   );
 }
@@ -893,6 +923,15 @@ function AgendaCard({
               </div>
 
               {addingEvent && <CreateAgendaEventForm agendaId={agenda.id} onAdded={() => setAddingEvent(false)} />}
+
+              {canManageAll && (
+                <details className="rounded-panel border border-border/60 bg-muted/20 p-2.5">
+                  <summary className="cursor-pointer text-xs font-medium text-foreground">Importar de planilha (CSV)</summary>
+                  <div className="mt-2">
+                    <ImportAgendaCsvForm agendaId={agenda.id} />
+                  </div>
+                </details>
+              )}
 
               <div className="space-y-2">
                 {events.map((event) => (

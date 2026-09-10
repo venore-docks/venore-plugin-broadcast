@@ -39,6 +39,7 @@ import { OutputsSection } from "../../components/admin/outputs-section";
 import { SettingsSection } from "../../components/admin/settings-section";
 import { AgendaSection } from "../../components/admin/agenda-section";
 import { ResponsiblesSection } from "../../components/admin/responsibles-section";
+import { OnboardingChecklist } from "../../components/admin/onboarding-checklist";
 
 // Único ponto de entrada do plugin no admin (pedido explícito: "não separe os links na navegação
 // admin") — chegou a existir uma rota satélite por permission (/admin/broadcast/agenda,
@@ -167,6 +168,14 @@ export default async function BroadcastAdminPage() {
     if (playlistId) (outputNamesByPlaylistId[playlistId] ??= []).push(output.name);
   }
 
+  // Miniatura dos itens "media-asset" da playlist (filename/url/contentType) — o resolver ignora
+  // itens sem mediaAssetId, então só resolve os da biblioteca; vídeo local não tem thumb sem
+  // ffmpeg e fica com o ícone. Keyed por item.id (ver resolvePickableMediaById).
+  const playlistItemMediaById = await resolvePickableMediaById(
+    Object.values(itemsByPlaylist).flat(),
+    (item) => item.mediaAssetId,
+  );
+
   const outputsView = (
     <OutputsSection
       outputs={outputs}
@@ -181,6 +190,7 @@ export default async function BroadcastAdminPage() {
     <PlaylistsSection
       playlists={playlists}
       itemsByPlaylist={itemsByPlaylist}
+      itemMediaById={playlistItemMediaById}
       agendas={agendas}
       agendaEvents={agendaEvents}
       outputNamesByPlaylistId={outputNamesByPlaylistId}
@@ -287,6 +297,9 @@ export default async function BroadcastAdminPage() {
     },
   ].filter((tab): tab is Exclude<typeof tab, false> => tab !== false);
 
+  const hasScreen = outputs.length > 0;
+  const hasContent = Object.values(itemsByPlaylist).some((items) => items.length > 0);
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -297,6 +310,8 @@ export default async function BroadcastAdminPage() {
             : "As telas, playlists e/ou agendas atribuídas a você."
         }
       />
+
+      {hasFullAccess && (!hasScreen || !hasContent) && <OnboardingChecklist hasScreen={hasScreen} hasContent={hasContent} />}
 
       {tabs.length > 1 ? <AdminOverviewNav tabs={tabs} /> : tabs[0]?.view}
     </div>

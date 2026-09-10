@@ -59,3 +59,14 @@ qualquer deploy diferente.
 3. **Telemetria e limitadores em memória por processo.** Além do output-bus e do pin-attempts,
    agora `runtime/output-beacon.ts` (presença/telemetria das TVs) também vive em `globalThis`.
    Mesma restrição de processo único do item 1.
+
+## Não implementado (deliberado)
+
+- **Sincronização de relógio entre telas** (video wall / salas espelhadas — todas no mesmo frame).
+  Nicho; exige mudar o modelo de reprodução do `PlaylistLayer` (posição a partir de
+  `epoch % duração` em vez de `useState(0)`) e uma bancada de teste com hardware pra validar.
+- **Split do `components/output/layer-renderer.tsx`** (~1.900 linhas). É refactor puro, sem valor
+  pro usuário, e arriscado sem `tsc`/testes rodando — melhor fazer com o loop de verificação ativo.
+- **Notificação ativa "TV caiu"** (push/e-mail). Precisa de um job no servidor comparando
+  "estava conectada, sumiu"; o plugin roda num processo só, sem scheduler. O admin já mostra o
+  estado ao vivo enquanto está aberto (telemetria + IPs conectados).

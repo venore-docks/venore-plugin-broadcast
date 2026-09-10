@@ -24,6 +24,7 @@ import {
   deletePlaylistItem,
   duplicateOutput,
   duplicatePlaylist,
+  importAgendaCsv,
   inspectVideosFolder,
   listConnectedOutputIps,
   listOutputPinBlocks,
@@ -818,6 +819,29 @@ export async function deleteAgendaAction(_prevState: BroadcastActionState, formD
 
   revalidatePath(returnTo);
   return { error: null };
+}
+
+export type ImportAgendaCsvState = { error: string | null; summary: string | null };
+
+// Importa eventos de um CSV colado/enviado numa agenda. Devolve um resumo (criados/pulados +
+// primeiras linhas com erro) pro componente mostrar, não só sucesso/erro.
+export async function importAgendaCsvAction(_prevState: ImportAgendaCsvState, formData: FormData): Promise<ImportAgendaCsvState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR, summary: null };
+
+  const timeZone = await getBroadcastTimezone();
+  const result = await importAgendaCsv({
+    agendaId: requireString(formData, "agendaId"),
+    csv: String(formData.get("csv") ?? ""),
+    timeZone,
+  });
+  if (!result.success) return { error: result.error.message, summary: null };
+
+  revalidatePath(returnTo);
+  const { created, skipped, errors } = result.data;
+  const parts = [`${created} evento${created === 1 ? "" : "s"} importado${created === 1 ? "" : "s"}`];
+  if (skipped > 0) parts.push(`${skipped} linha${skipped === 1 ? "" : "s"} ignorada${skipped === 1 ? "" : "s"}`);
+  const summary = parts.join(" · ") + (errors.length > 0 ? `\n${errors.join("\n")}` : "");
+  return { error: null, summary };
 }
 
 export async function createAgendaEventAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
