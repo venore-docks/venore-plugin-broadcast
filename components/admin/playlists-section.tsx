@@ -560,9 +560,12 @@ function PlaylistItemRow({
   const [editing, setEditing] = useState(false);
   const validity = describeValidityWindow(item);
   const referencedEventTitle = item.agendaEventId ? agendaEventById[item.agendaEventId]?.title : undefined;
+  // Só o nome do arquivo, sem a pasta ("videos/intro.mp4" → "intro.mp4") — mesmo rótulo que a TV
+  // usa (ver get-output-state/service.ts). O caminho relativo à raiz não diz nada pro operador.
+  const relativeFileName = item.relativePath ? (item.relativePath.split("/").pop() || item.relativePath) : null;
   const label =
     item.title ??
-    item.relativePath ??
+    relativeFileName ??
     item.url ??
     referencedEventTitle ??
     (item.sourceType === "news" ? "Bloco de notícias" : item.sourceType === "agenda-event" ? "Evento da agenda" : "Item da biblioteca de mídia (sem título)");
