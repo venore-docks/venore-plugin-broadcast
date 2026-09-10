@@ -124,7 +124,9 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 // a ação principal do card, não mais um botão secundário entre outros.
 function CopyOutputUrlButton({ token }: { token: string }) {
   const [copied, setCopied] = useState(false);
-  const path = `/broadcast/out/${token}`;
+  // A view de saída é uma rota `standalone` — o dispatcher do core é /ext/[...slug], então a URL
+  // real leva o prefixo /ext (ver routes/route-table.ts e platform/plugin-routing).
+  const path = `/ext/broadcast/out/${token}`;
 
   return (
     <Button
@@ -150,14 +152,14 @@ function CopyOutputUrlButton({ token }: { token: string }) {
   );
 }
 
-// QR code do link da TV — digitar `http://192.168.x.x/broadcast/out/recepcao` num controle remoto
-// de TV é o passo mais penoso do fluxo. Com o QR, aponta a câmera do celular (ou um leitor na
-// própria TV) e abre. Gera sob demanda no primeiro "abrir" (o `qrcode` roda no browser e devolve
-// um PNG data URL) — mesmo URL que o botão de copiar usa, pra não divergir.
+// QR code do link da TV — digitar `http://192.168.x.x/ext/broadcast/out/recepcao` num controle
+// remoto de TV é o passo mais penoso do fluxo. Com o QR, aponta a câmera do celular (ou um leitor
+// na própria TV) e abre. Gera sob demanda no primeiro "abrir" (o `qrcode` roda no browser e
+// devolve um PNG data URL) — mesmo URL que o botão de copiar usa, pra não divergir.
 function OutputQrToggle({ token }: { token: string }) {
   const [open, setOpen] = useState(false);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const path = `/broadcast/out/${token}`;
+  const path = `/ext/broadcast/out/${token}`;
   const fullUrl = typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
 
   useEffect(() => {
@@ -236,7 +238,7 @@ function OutputCoverPreview({ token }: { token: string }) {
       {open && scale > 0 ? (
         <>
           <iframe
-            src={`/broadcast/out/${token}`}
+            src={`/ext/broadcast/out/${token}`}
             title="Preview da tela"
             style={{
               width: PREVIEW_DESIGN_WIDTH,
@@ -1314,7 +1316,7 @@ export function OutputsSection({
       <p className="text-xs text-muted-foreground">
         Novo na hora de ligar uma TV?{" "}
         <a
-          href="/broadcast/setup"
+          href="/ext/broadcast/setup"
           target="_blank"
           rel="noopener noreferrer"
           className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
