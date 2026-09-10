@@ -4,7 +4,8 @@ import type { OperationResult } from "@venore/plugin-sdk";
 //   reload      — manda todas recarregarem
 //   offline-on  — põe todas em modo espera
 //   offline-off — tira todas do modo espera
-export type BulkOutputActionKind = "reload" | "offline-on" | "offline-off";
+//   ungroup     — tira todas do grupo (group_name = null) — desfaz o grupo
+export type BulkOutputActionKind = "reload" | "offline-on" | "offline-off" | "ungroup";
 
 export type BulkOutputActionCommand = { groupName: string; action: BulkOutputActionKind; actorId: string };
 export type BulkOutputActionInput = Omit<BulkOutputActionCommand, "actorId">;

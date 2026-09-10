@@ -13,6 +13,7 @@ import {
   Layers,
   Link2,
   ListVideo,
+  Palette,
   PanelBottomClose,
   PanelBottomOpen,
   PanelRightClose,
@@ -364,40 +365,24 @@ function OutputCoverPreview({ token }: { token: string }) {
   );
 }
 
-// Troca ao selecionar — pedido explícito: "não vejo razão de ter um botão 'trocar'". Escrevendo
-// direto no ref do input escondido (não via bubble input do próprio Select) antes de
-// requestSubmit(), mesmo padrão de SortablePlaylistItems (playlists-section.tsx): evita depender
-// da ordem entre o efeito interno do Radix e o submit, que poderia disparar antes do valor novo
-// realmente estar no DOM.
+// Troca ao selecionar (sem botão "trocar"). v1.8.1: sem fluxo otimista — escreve no input
+// escondido, submete, e a action faz revalidatePath; a página volta com o estado real. O
+// otimismo de antes estava revertendo pra "playlist própria" em alguns casos (bug reportado).
 function SetOutputPlaylistForm({
   output,
   playlists,
   currentPlaylistId,
-  onPlaylistChange,
 }: {
   output: BroadcastOutputRecord;
   playlists: BroadcastPlaylistRecord[];
-  // Estado otimista mantido pelo OutputCard (pai) — o <Select> é controlado por ele pra que a troca
-  // reflita no card inteiro (badge "Playlist:", faixa de status) na hora, sem revalidatePath.
   currentPlaylistId: string | null;
-  onPlaylistChange: (playlistId: string | null) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const playlistIdInputRef = useRef<HTMLInputElement>(null);
-  // Valor pra onde voltar se a action falhar (o id de antes deste clique).
-  const revertToRef = useRef(currentPlaylistId);
-
   const [state, formAction, pending] = useActionState(setOutputPlaylistAction, playlistInitialState);
-  useActionToast({
-    pending,
-    error: state.error,
-    successMessage: "Playlist trocada.",
-    onError: () => onPlaylistChange(revertToRef.current),
-  });
+  useActionToast({ pending, error: state.error, successMessage: "Playlist trocada." });
 
   function handleChange(playlistId: string) {
-    revertToRef.current = currentPlaylistId;
-    onPlaylistChange(playlistId); // otimista: card reflete já; a action ecoa o mesmo id no sucesso
     if (playlistIdInputRef.current) playlistIdInputRef.current.value = playlistId;
     formRef.current?.requestSubmit();
   }
@@ -407,10 +392,14 @@ function SetOutputPlaylistForm({
       <input type="hidden" name="outputId" value={output.id} />
       <input type="hidden" name="playlistId" ref={playlistIdInputRef} defaultValue={currentPlaylistId ?? ""} />
       <Select value={currentPlaylistId ?? undefined} onValueChange={handleChange} disabled={pending}>
-        <SelectTrigger className="w-full"><SelectValue placeholder="Escolha uma playlist..." /></SelectTrigger>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Escolha uma playlist..." />
+        </SelectTrigger>
         <SelectContent>
           {playlists.map((playlist) => (
-            <SelectItem key={playlist.id} value={playlist.id}>{playlist.name}</SelectItem>
+            <SelectItem key={playlist.id} value={playlist.id}>
+              {playlist.name}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -803,39 +792,83 @@ function OutputScheduleSection({
   );
 }
 
-// Rótulo de grupo da tela (texto livre com sugestões dos grupos já existentes). Telas com o mesmo
-// rótulo formam um grupo pras ações em lote (GroupsPanel).
-function OutputGroupField({ output, allGroups }: { output: BroadcastOutputRecord; allGroups: string[] }) {
+// Grupo da tela — chip discreto ao lado do nome ("Sem grupo" ou o nome do grupo + ícone quando o
+// grupo está sincronizado). Clicar abre um diálogo pra digitar/escolher o grupo ou tirar do grupo.
+function OutputGroupControl({
+  output,
+  allGroups,
+  synced,
+}: {
+  output: BroadcastOutputRecord;
+  allGroups: string[];
+  synced: boolean;
+}) {
+  const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(setOutputGroupAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Grupo salvo." });
+  useActionToast({ pending, error: state.error, successMessage: "Grupo salvo.", onSuccess: () => setOpen(false) });
   const listId = useId();
+
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
-      <input type="hidden" name="outputId" value={output.id} />
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground" htmlFor={`${output.id}-group`}>Grupo (opcional)</label>
-        <Input
-          id={`${output.id}-group`}
-          name="groupName"
-          defaultValue={output.groupName ?? ""}
-          list={listId}
-          placeholder="Ex: Prédio A"
-          className="w-48"
-        />
-        <datalist id={listId}>
-          {allGroups.map((group) => (
-            <option key={group} value={group} />
-          ))}
-        </datalist>
-      </div>
-      <Button type="submit" size="sm" variant="outline" disabled={pending}>Salvar</Button>
-    </form>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground ui-motion-base hover:border-ring hover:text-foreground"
+        >
+          {output.groupName ? (
+            <>
+              {output.groupName}
+              {synced && <RotateCw className="size-3" aria-label="reprodução sincronizada" />}
+            </>
+          ) : (
+            "Sem grupo"
+          )}
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Grupo desta tela</DialogTitle>
+          <DialogDescription>
+            Telas no mesmo grupo ganham ações em lote e podem tocar sincronizadas (diálogo Grupos, no topo da lista).
+          </DialogDescription>
+        </DialogHeader>
+        <form action={formAction} className="space-y-3">
+          <input type="hidden" name="outputId" value={output.id} />
+          <Input name="groupName" defaultValue={output.groupName ?? ""} list={listId} placeholder="Ex: Prédio A" autoFocus />
+          <datalist id={listId}>
+            {allGroups.map((group) => (
+              <option key={group} value={group} />
+            ))}
+          </datalist>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={pending}>
+              Salvar
+            </Button>
+            {output.groupName && (
+              <Button
+                type="submit"
+                size="sm"
+                variant="ghost"
+                disabled={pending}
+                onClick={(event) => {
+                  const form = event.currentTarget.form;
+                  const field = form?.elements.namedItem("groupName");
+                  if (field instanceof HTMLInputElement) field.value = "";
+                }}
+              >
+                Tirar do grupo
+              </Button>
+            )}
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// Cor livre do card da tela no admin — só visual (faixa lateral no card + na linha da lista).
-// Salva no blur/change do seletor; o "Sem cor" limpa. NÃO mexe na bolinha de status.
-function OutputCardColorField({ output }: { output: BroadcastOutputRecord }) {
+// Cor do card — swatch pequeno à esquerda do nome. O próprio swatch é o <input type="color">
+// (opacidade 0 por cima do quadradinho colorido); mudar salva no blur. O "×" ao lado limpa.
+function OutputColorControl({ output }: { output: BroadcastOutputRecord }) {
   const formRef = useRef<HTMLFormElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(setOutputCardColorAction, initialState);
@@ -847,24 +880,34 @@ function OutputCardColorField({ output }: { output: BroadcastOutputRecord }) {
   }
 
   return (
-    <form ref={formRef} action={formAction} className="flex items-end gap-2">
+    <form ref={formRef} action={formAction} className="flex shrink-0 items-center gap-1">
       <input type="hidden" name="outputId" value={output.id} />
       <input type="hidden" name="cardColor" ref={colorInputRef} defaultValue={output.cardColor ?? ""} />
-      <div className="space-y-1">
-        <label className="text-xs text-muted-foreground" htmlFor={`${output.id}-card-color`}>Cor do card</label>
+      <span
+        className="relative inline-flex size-6 items-center justify-center rounded-full border border-border"
+        style={output.cardColor ? { background: output.cardColor, borderColor: output.cardColor } : undefined}
+        title="Cor do card"
+      >
+        {!output.cardColor && <Palette className="size-3.5 text-muted-foreground" aria-hidden="true" />}
         <input
-          id={`${output.id}-card-color`}
           type="color"
+          aria-label="Cor do card"
           defaultValue={output.cardColor ?? "#3b82f6"}
           disabled={pending}
           onBlur={(event) => submitWith(event.target.value)}
-          className="h-9 w-14 cursor-pointer rounded-md border border-border bg-card"
+          className="absolute inset-0 cursor-pointer opacity-0"
         />
-      </div>
+      </span>
       {output.cardColor && (
-        <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => submitWith("")}>
-          Sem cor
-        </Button>
+        <button
+          type="button"
+          onClick={() => submitWith("")}
+          disabled={pending}
+          title="Sem cor"
+          className="text-sm leading-none text-muted-foreground ui-motion-base hover:text-foreground"
+        >
+          ×
+        </button>
       )}
     </form>
   );
@@ -973,7 +1016,11 @@ function GroupsPanel({
                 <GroupBulkButton groupName={name} action="reload" label="Recarregar todas" />
                 <GroupBulkButton groupName={name} action="offline-on" label="Pôr em espera" />
                 <GroupBulkButton groupName={name} action="offline-off" label="Tirar da espera" />
+                <GroupBulkButton groupName={name} action="ungroup" label="Desfazer grupo" />
               </div>
+              <p className="text-xs text-muted-foreground">
+                “Desfazer grupo” só tira o rótulo — as telas voltam a ser “Sem grupo”, nada é apagado.
+              </p>
             </div>
           );
         })}
@@ -1573,8 +1620,7 @@ function buildPlaylistOptions(
 function OutputContentTab({
   output,
   ownPlaylist,
-  playlistId,
-  onPlaylistChange,
+  currentPlaylistId,
   playlists,
   outputs,
   outputPlaylistById,
@@ -1588,8 +1634,7 @@ function OutputContentTab({
 }: {
   output: BroadcastOutputRecord;
   ownPlaylist: BroadcastPlaylistRecord | null;
-  playlistId: string | null;
-  onPlaylistChange: (playlistId: string | null) => void;
+  currentPlaylistId: string | null;
   playlists: BroadcastPlaylistRecord[];
   outputs: BroadcastOutputRecord[];
   outputPlaylistById: Record<string, string | null>;
@@ -1602,8 +1647,8 @@ function OutputContentTab({
   canManageAll: boolean;
 }) {
   const options = buildPlaylistOptions(output, ownPlaylist, outputs, playlists);
-  const playingOwn = ownPlaylist != null && playlistId === ownPlaylist.id;
-  const currentPlaylist = playlists.find((playlist) => playlist.id === playlistId) ?? null;
+  const playingOwn = ownPlaylist != null && currentPlaylistId === ownPlaylist.id;
+  const currentPlaylist = playlists.find((playlist) => playlist.id === currentPlaylistId) ?? null;
 
   // Outras telas que tocam ESTA playlist propria agora (aviso "alterar aqui muda nelas tambem").
   const alsoPlayedBy = playingOwn
@@ -1625,12 +1670,7 @@ function OutputContentTab({
         <p className="text-xs text-muted-foreground">
           Cada tela tem a propria playlist. Aponte para a de outra tela quando duas telas devem mostrar o mesmo.
         </p>
-        <SetOutputPlaylistForm
-          output={output}
-          playlists={options}
-          currentPlaylistId={playlistId}
-          onPlaylistChange={onPlaylistChange}
-        />
+        <SetOutputPlaylistForm output={output} playlists={options} currentPlaylistId={currentPlaylistId} />
       </div>
 
       {playingOwn && ownPlaylist ? (
@@ -1747,6 +1787,7 @@ function OutputDetail({
   pinBlocked,
   scheduleSlots,
   allGroups,
+  syncedGroups,
   canManageAll,
 }: {
   output: BroadcastOutputRecord;
@@ -1764,12 +1805,14 @@ function OutputDetail({
   pinBlocked: boolean;
   scheduleSlots: BroadcastPlaylistScheduleSlot[];
   allGroups: string[];
+  syncedGroups: string[];
   canManageAll: boolean;
 }) {
   const ownPlaylist = playlists.find((playlist) => playlist.ownerOutputId === output.id) ?? null;
-  const [playlistId, setPlaylistId] = useState(outputPlaylistById[output.id] ?? null);
+  const currentPlaylistId = outputPlaylistById[output.id] ?? null;
   const [tab, setTab] = useUrlParam("ver", "conteudo");
-  const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
+  const playlistName = playlists.find((playlist) => playlist.id === currentPlaylistId)?.name ?? null;
+  const groupSynced = Boolean(output.groupName && syncedGroups.includes(output.groupName));
 
   return (
     <Card
@@ -1780,7 +1823,11 @@ function OutputDetail({
     >
       <OutputCoverPreview token={output.token} />
       <CardHeader>
-        <CardTitle className="min-w-0 truncate">{output.name}</CardTitle>
+        <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          {canManageAll && <OutputColorControl output={output} />}
+          <CardTitle className="min-w-0 truncate">{output.name}</CardTitle>
+          {canManageAll && <OutputGroupControl output={output} allGroups={allGroups} synced={groupSynced} />}
+        </div>
         <CardAction className="flex items-center gap-0.5">
           <CopyOutputUrlIconButton token={output.token} />
           {canManageAll && <DuplicateOutputButton outputId={output.id} />}
@@ -1794,12 +1841,6 @@ function OutputDetail({
             telemetry={telemetry}
           />
         </div>
-        {canManageAll && (
-          <div className="col-start-1 mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
-            <OutputGroupField output={output} allGroups={allGroups} />
-            <OutputCardColorField output={output} />
-          </div>
-        )}
       </CardHeader>
       <CardContent>
         <Tabs value={tab ?? "conteudo"} onValueChange={setTab}>
@@ -1821,8 +1862,7 @@ function OutputDetail({
             <OutputContentTab
               output={output}
               ownPlaylist={ownPlaylist}
-              playlistId={playlistId}
-              onPlaylistChange={setPlaylistId}
+              currentPlaylistId={currentPlaylistId}
               playlists={playlists}
               outputs={outputs}
               outputPlaylistById={outputPlaylistById}
@@ -2004,6 +2044,7 @@ export function OutputsSection({
               pinBlocked={blockedTokens.has(output.token)}
               scheduleSlots={schedulesByOutputId[output.id] ?? []}
               allGroups={allGroups}
+              syncedGroups={syncedGroups}
               canManageAll={canManageAll}
             />
           );

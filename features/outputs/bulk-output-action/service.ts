@@ -1,6 +1,6 @@
 import { beginOperation, endOperation } from "@venore/plugin-sdk/observability";
 import { publishOutputEvent } from "../../../runtime/output-bus";
-import { findOutputsInGroup, setOfflineForOutputs } from "./store";
+import { clearGroupForOutputs, findOutputsInGroup, setOfflineForOutputs } from "./store";
 import type { BulkOutputActionCommand, BulkOutputActionResult } from "./types";
 
 export async function bulkOutputAction(command: BulkOutputActionCommand): Promise<BulkOutputActionResult> {
@@ -17,6 +17,8 @@ export async function bulkOutputAction(command: BulkOutputActionCommand): Promis
 
   if (command.action === "reload") {
     for (const output of outputs) publishOutputEvent(output.token, { type: "reload" });
+  } else if (command.action === "ungroup") {
+    await clearGroupForOutputs(outputs.map((output) => output.id));
   } else {
     const offline = command.action === "offline-on";
     await setOfflineForOutputs(

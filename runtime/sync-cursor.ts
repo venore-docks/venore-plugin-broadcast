@@ -18,8 +18,10 @@ type SyncCursorEntry = {
 };
 
 // Reports de "acabou o item" que chegam dentro dessa janela depois de um avanço são ignorados —
-// várias TVs do grupo reportam quase juntas.
-export const ADVANCE_DEBOUNCE_MS = 2000;
+// só pra deduplicar as várias TVs do grupo reportando quase juntas. Curto de propósito: se fosse
+// longo (ex: 2s), um item de vídeo mais curto que isso nunca avançaria (a TV ficaria presa no
+// frame final). Itens abaixo de ~0,6s não são um caso de uso suportado na sincronização.
+export const ADVANCE_DEBOUNCE_MS = 600;
 
 type SyncCursorGlobal = typeof globalThis & {
   __broadcastSyncCursors?: Map<string, SyncCursorEntry>;

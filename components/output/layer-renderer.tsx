@@ -676,15 +676,23 @@ function PlaylistLayer({
   useTimedAdvance(timedDurationMs, onItemEnd, timedActive && !frozen, manualTick);
   const advanceUnlessFrozen = onItemEnd;
 
-  // Seek do vídeo pra bater o relógio do grupo (abordagem A): ao trocar de item (sync.itemId /
-  // startedAtMs novos) e a cada ~10s pra corrigir deriva. Só pra item de vídeo — imagem/página
-  // não têm posição contínua.
+  // Seek do vídeo pra bater o relógio do grupo (abordagem A): ao receber um sync novo (itemId /
+  // elapsedMs) e a cada ~10s pra corrigir deriva. `elapsedMs` é "há quanto tempo o item começou"
+  // medido no servidor; ancoramos num relógio MONOTÔNICO local (performance.now) a partir daí, sem
+  // comparar relógio de máquinas (evita erro de skew de NTP). Só pra item de vídeo.
+  const syncAnchorRef = useRef({ atPerfMs: 0, elapsedMs: 0 });
+  useEffect(() => {
+    if (!sync) return;
+    syncAnchorRef.current = { atPerfMs: performance.now(), elapsedMs: sync.elapsedMs };
+  }, [sync?.itemId, sync?.elapsedMs, sync]);
+
   useEffect(() => {
     if (!sync || current?.kind !== "video") return;
     const seekToClock = () => {
       const video = videoRef.current;
       if (!video || video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) return;
-      const expected = (Date.now() - sync.startedAtMs) / 1000;
+      const anchor = syncAnchorRef.current;
+      const expected = (anchor.elapsedMs + (performance.now() - anchor.atPerfMs)) / 1000;
       if (expected < 0 || expected >= video.duration - 0.4) return;
       if (Math.abs(video.currentTime - expected) > 1.5) {
         try {
@@ -702,9 +710,8 @@ function PlaylistLayer({
       clearInterval(drift);
       videoRef.current?.removeEventListener("loadedmetadata", onMeta);
     };
-    // syncReportedForRef zera junto — item novo, pode reportar de novo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sync?.itemId, sync?.startedAtMs, current?.kind]);
+  }, [sync?.itemId, sync?.elapsedMs, current?.kind]);
 
   // Item novo no cursor do grupo → libera um novo report de "acabou".
   useEffect(() => {

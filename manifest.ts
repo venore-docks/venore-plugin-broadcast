@@ -14,7 +14,7 @@ export const broadcastManifest: PluginManifest = {
   manifestVersion: "1.0.0",
   key: "broadcast",
   name: "Broadcast Studio",
-  version: "1.8.1",
+  version: "1.8.2",
   description:
     "Composição de cenas em camadas (vídeo de playlist + overlays HTML5) com saída para exibição em TV, tipo um switcher OBS simplificado.",
   compatibility: { coreVersion: ">=2.0.0 <3.0.0" },

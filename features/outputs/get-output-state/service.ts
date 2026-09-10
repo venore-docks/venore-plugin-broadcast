@@ -310,20 +310,14 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
     if (syncedGroups.includes(output.groupName)) {
       const cursor = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
       let position = syncItems.findIndex((item) => item.id === cursor.itemId);
-      if (position === -1) {
-        // A playlist mudou (item removido/reordenado) — re-ancora do zero.
-        resetSyncCursor(primaryPlaylistId);
-        const fresh = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
-        position = 0;
-        sync = { playlistId: primaryPlaylistId, itemIndex: 0, itemId: fresh.itemId, startedAtMs: fresh.startedAtMs };
-      } else {
-        sync = {
-          playlistId: primaryPlaylistId,
-          itemIndex: position,
-          itemId: cursor.itemId,
-          startedAtMs: cursor.startedAtMs,
-        };
-      }
+      const active = position === -1 ? (resetSyncCursor(primaryPlaylistId), ensureSyncCursor(primaryPlaylistId, syncItems[0].id)) : cursor;
+      if (position === -1) position = 0;
+      sync = {
+        playlistId: primaryPlaylistId,
+        itemIndex: position,
+        itemId: active.itemId,
+        elapsedMs: Math.max(0, Date.now() - active.startedAtMs),
+      };
     }
   }
 

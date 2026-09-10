@@ -433,6 +433,9 @@ export async function setOutputPlaylistAction(_prevState: BroadcastActionState, 
   });
   if (!result.success) return { error: result.error.message, playlistId: null };
 
+  // v1.8.1: recarrega a página pra o seletor refletir a troca de verdade — o fluxo otimista
+  // (onPlaylistChange no client) estava revertendo pra "playlist própria" em alguns casos.
+  revalidatePath(returnTo);
   return { error: null, playlistId };
 }
 
@@ -565,7 +568,8 @@ export async function bulkOutputActionAction(_prevState: BroadcastActionState, f
   const action = requireString(formData, "action");
   const result = await bulkOutputAction({
     groupName: requireString(formData, "groupName"),
-    action: action === "offline-on" || action === "offline-off" ? action : "reload",
+    action:
+      action === "offline-on" || action === "offline-off" || action === "ungroup" ? action : "reload",
   });
   if (!result.success) return { error: result.error.message };
 

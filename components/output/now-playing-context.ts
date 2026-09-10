@@ -18,6 +18,6 @@ export const FreezeContext = createContext(false);
 // nem avança sozinho: mostra `itemIndex`, dá seek no <video> pra bater `startedAtMs`, e ao terminar
 // o item faz POST em /api/broadcast/output/<token>/sync-advance. O servidor (get-output-state)
 // preenche isso só pras telas de grupo sincronizado.
-export type SyncInfo = { token: string; playlistId: string; itemIndex: number; itemId: string; startedAtMs: number };
+export type SyncInfo = { token: string; playlistId: string; itemIndex: number; itemId: string; elapsedMs: number };
 
 export const SyncContext = createContext<SyncInfo | null>(null);

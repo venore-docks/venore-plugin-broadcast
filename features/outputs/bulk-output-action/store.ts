@@ -16,3 +16,11 @@ export async function setOfflineForOutputs(ids: string[], offline: boolean): Pro
     .set({ offline, updatedAt: sql`now()` })
     .where(inArray(broadcastOutputs.id, ids));
 }
+
+export async function clearGroupForOutputs(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db
+    .update(broadcastOutputs)
+    .set({ groupName: null, updatedAt: sql`now()` })
+    .where(inArray(broadcastOutputs.id, ids));
+}
