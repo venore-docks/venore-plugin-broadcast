@@ -4,6 +4,14 @@ import { broadcastLayers, broadcastOutputs, broadcastPlaylists, broadcastScenes 
 import { BROADCAST_VIDEOS_FOLDER_PATH } from "../../../shared/settings";
 import { slugifyOutputName } from "../../../shared/output-token";
 import type { BroadcastOutputRecord } from "../../../contracts/types";
+import type { OutputTemplate } from "./types";
+
+// As 3 camadas sempre existem; o template só ajusta a visibilidade inicial da agenda e os toggles.
+const TEMPLATE_CONFIG: Record<OutputTemplate, { drawerOpen: boolean; footerOpen: boolean; agendaVisible: boolean }> = {
+  completo: { drawerOpen: true, footerOpen: true, agendaVisible: true },
+  "video-rodape": { drawerOpen: false, footerOpen: true, agendaVisible: false },
+  video: { drawerOpen: false, footerOpen: false, agendaVisible: false },
+};
 
 const MAX_SLUG_ATTEMPTS = 50;
 
@@ -41,8 +49,9 @@ async function resolveUniqueToken(name: string): Promise<string> {
 // A camada de vídeo nasce em 100% de largura (config.agendaOpenVariant encolhe pra 80% quando
 // drawerOpen=true, mesmo mecanismo de resolveLayerGeometry); a de agenda nasce nos 20% restantes,
 // mas só é renderizada quando drawerOpen=true (ver LayerRenderer).
-export async function createOutputWithDefaultScene(input: { name: string }): Promise<BroadcastOutputRecord> {
+export async function createOutputWithDefaultScene(input: { name: string; template: OutputTemplate }): Promise<BroadcastOutputRecord> {
   const token = await resolveUniqueToken(input.name);
+  const cfg = TEMPLATE_CONFIG[input.template];
 
   return db.transaction(async (tx) => {
     const [output] = await tx.insert(broadcastOutputs).values({ name: input.name, token }).returning();
@@ -80,7 +89,7 @@ export async function createOutputWithDefaultScene(input: { name: string }): Pro
         height: 100,
         zIndex: 1,
         config: {},
-        visible: true,
+        visible: cfg.agendaVisible,
       },
       {
         sceneId: scene.id,
@@ -98,7 +107,7 @@ export async function createOutputWithDefaultScene(input: { name: string }): Pro
 
     const [updatedOutput] = await tx
       .update(broadcastOutputs)
-      .set({ currentSceneId: scene.id, drawerOpen: true })
+      .set({ currentSceneId: scene.id, drawerOpen: cfg.drawerOpen, footerOpen: cfg.footerOpen })
       .where(eq(broadcastOutputs.id, output.id))
       .returning();
 

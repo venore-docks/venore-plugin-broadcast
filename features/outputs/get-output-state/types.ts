@@ -30,10 +30,18 @@ export type BroadcastOutputState = {
   // Tela de espera branded ligada de propósito pelo admin (Fase 11) — quando true, output-canvas.tsx
   // renderiza a StandbyScreen no lugar do conteúdo. brandLogoUrl/brandColor são resolvidos mesmo
   // com o footer fechado quando isto é true (ver needsBrandLogo/needsBrandColor no service).
+  // effectiveOffline: toggle manual OU fora do horário de funcionamento da tela (ver service).
   offline: boolean;
   // Ticker de agenda no rodapé — opt-in, ver components/output/output-canvas.tsx
   // (effectiveTickerOpen) e AgendaTickerBar.
   tickerEnabled: boolean;
+  // Há pelo menos um item de vídeo tocável na playlist da camada de vídeo. Quando false E a saída
+  // tem fallback configurado, a view mostra o fallback no lugar da tela de espera genérica.
+  hasPlayableContent: boolean;
+  // Fallback de conteúdo desta saída (ver database/schema/index.ts) — imagem/vídeo já resolvido
+  // pra URL + mensagem livre. null/null = tela de espera padrão.
+  fallbackUrl: string | null;
+  fallbackMessage: string | null;
   scene: BroadcastSceneRecord | null;
   layers: BroadcastLayerRecord[];
   playlistItemsByPlaylistId: Record<string, PlaylistItemSummary[]>;

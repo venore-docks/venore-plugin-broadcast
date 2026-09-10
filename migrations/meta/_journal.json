@@ -50,6 +50,13 @@
       "when": 1788998382488,
       "tag": "0006_output_playlist_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789049097790,
+      "tag": "0007_output_fallback_and_hours",
+      "breakpoints": true
     }
   ]
 }

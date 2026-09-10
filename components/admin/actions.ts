@@ -39,6 +39,8 @@ import {
   setOutputDrawer,
   setOutputEditors,
   setOutputFooter,
+  setOutputFallback,
+  setOutputHours,
   setOutputOffline,
   setOutputPin,
   setOutputPlaylist,
@@ -54,6 +56,7 @@ import {
 import { getSetting, setSetting } from "@venore/plugin-sdk/settings";
 import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
+import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastOutputRecord } from "../../contracts/types";
 import type { OutputBeaconSummary, VideosFolderHealth } from "../../index";
 
@@ -407,8 +410,10 @@ export async function reorderPlaylistItemsAction(_prevState: BroadcastActionStat
 export async function createOutputAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
+  const template = requireString(formData, "template");
   const result = await createOutput({
     name: requireString(formData, "name"),
+    template: template === "video" || template === "video-rodape" ? template : "completo",
   });
   if (!result.success) return { error: result.error.message };
 
@@ -519,6 +524,46 @@ export async function resetOutputPinAttemptsAction(_prevState: BroadcastActionSt
   const result = await resetOutputPinAttempts({ outputId: requireString(formData, "outputId") });
   if (!result.success) return { error: result.error.message };
 
+  return { error: null };
+}
+
+// Fallback de conteúdo da tela — imagem/vídeo da biblioteca (id) + mensagem. Campos vazios = null.
+export async function setOutputFallbackAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  // Cada campo só entra se o form o enviou (formData.has) — a mensagem e a mídia têm forms
+  // separados no admin, então salvar um não zera o outro.
+  const result = await setOutputFallback({
+    outputId: requireString(formData, "outputId"),
+    mediaAssetId: formData.has("mediaAssetId") ? requireString(formData, "mediaAssetId") || null : undefined,
+    message: formData.has("message") ? requireString(formData, "message") || null : undefined,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// Horário de funcionamento da tela — dias (bitmask) + início/fim como "HH:MM". Tudo vazio = desliga.
+export async function setOutputHoursAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const rawDays = formData.get("days");
+  const rawStart = requireString(formData, "startTime");
+  const rawEnd = requireString(formData, "endTime");
+  const days = rawDays === null || rawDays === "" ? null : Number(rawDays);
+  const startMinute = rawStart ? parseTimeToMinutes(rawStart) : null;
+  const endMinute = rawEnd ? parseTimeToMinutes(rawEnd) : null;
+
+  const result = await setOutputHours({
+    outputId: requireString(formData, "outputId"),
+    days: days && Number.isFinite(days) && days > 0 ? days : null,
+    startMinute,
+    endMinute,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
   return { error: null };
 }
 

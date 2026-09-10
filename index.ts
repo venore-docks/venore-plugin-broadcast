@@ -176,6 +176,12 @@ export { setOutputOfflineHandler as setOutputOffline } from "./features/outputs/
 // database/schema/index.ts) — ver shared/scoped-authorization (mesmo authorizeOutputActor de
 // setOutputDrawer/setOutputFooter) e o scheduler client em output-canvas.tsx.
 export { setOutputAgendaScheduleHandler as setOutputAgendaSchedule } from "./features/outputs/set-output-agenda-schedule/handler";
+// Fallback de conteúdo (imagem/vídeo + mensagem) e horário de funcionamento da tela — mesmo
+// authorizeOutputActor dos outros controles; publicam "settings-changed" (a TV re-resolve).
+export { setOutputFallbackHandler as setOutputFallback } from "./features/outputs/set-output-fallback/handler";
+export type { SetOutputFallbackInput, SetOutputFallbackResult } from "./features/outputs/set-output-fallback/types";
+export { setOutputHoursHandler as setOutputHours } from "./features/outputs/set-output-hours/handler";
+export type { SetOutputHoursInput, SetOutputHoursResult } from "./features/outputs/set-output-hours/types";
 export { setOutputPinHandler as setOutputPin } from "./features/outputs/set-output-pin/handler";
 // Zera o limitador de tentativas de PIN (brute force) de uma saída — gate igual ao de
 // setOutputPin (broadcast.manage OU broadcast.outputs.manage + atribuição). Contador em memória
@@ -237,7 +243,8 @@ export type {
 export type { ListOutputPlaylistSchedulesResult } from "./features/outputs/list-output-playlist-schedules/types";
 export type { BroadcastPlaylistScheduleSlot } from "./contracts/types";
 
-export type { CreateOutputInput, CreateOutputResult } from "./features/outputs/create-output/types";
+export type { CreateOutputInput, CreateOutputResult, OutputTemplate } from "./features/outputs/create-output/types";
+export { OUTPUT_TEMPLATES } from "./features/outputs/create-output/types";
 export type { ListOutputsResult } from "./features/outputs/list-outputs/types";
 export type { SetOutputPlaylistInput, SetOutputPlaylistResult } from "./features/outputs/set-output-playlist/types";
 export type { SetOutputDrawerInput, SetOutputDrawerResult } from "./features/outputs/set-output-drawer/types";

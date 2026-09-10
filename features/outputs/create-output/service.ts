@@ -9,7 +9,7 @@ export async function createOutput(command: CreateOutputCommand): Promise<Create
     kind: "write",
   });
 
-  const record = await createOutputWithDefaultScene({ name: command.name.trim() });
+  const record = await createOutputWithDefaultScene({ name: command.name.trim(), template: command.template });
 
   endOperation(handle, { success: true });
   return { success: true, data: record };

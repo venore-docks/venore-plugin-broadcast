@@ -208,6 +208,15 @@ export type BroadcastOutputRecord = {
   // shared/pin-hash.ts), null = sem proteção. Nunca deve ser serializado pro browser (não faz
   // parte de BroadcastOutputState, ver get-output-state).
   pin: string | null;
+  // Fallback de conteúdo (ver database/schema/index.ts) — usado quando a playlist não resolve nada
+  // tocável. null/null = tela de espera padrão.
+  fallbackMediaAssetId: string | null;
+  fallbackMessage: string | null;
+  // Horário de funcionamento (ver database/schema/index.ts) — fora dele a tela entra em modo
+  // espera. null = sem horário (sempre no ar).
+  activeDays: number | null;
+  activeStartMinute: number | null;
+  activeEndMinute: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -282,4 +291,7 @@ export type BroadcastOutputEvent =
   | { type: "offline-changed"; offline: boolean }
   | { type: "alert-changed" }
   | { type: "playlist-changed" }
+  // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
+  // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".
+  | { type: "settings-changed" }
   | { type: "reload" };

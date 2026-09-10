@@ -19,9 +19,9 @@ describe("createOutput", () => {
     createOutputWithDefaultScene.mockResolvedValue({ id: "o1", name: "TV da recepção", token: "tv-da-recepcao" });
 
     const { createOutput } = await import("./service");
-    const result = await createOutput({ name: "  TV da recepção  ", actorId: "actor-1" });
+    const result = await createOutput({ name: "  TV da recepção  ", template: "completo", actorId: "actor-1" });
 
     expect(result).toEqual({ success: true, data: { id: "o1", name: "TV da recepção", token: "tv-da-recepcao" } });
-    expect(createOutputWithDefaultScene).toHaveBeenCalledWith({ name: "TV da recepção" });
+    expect(createOutputWithDefaultScene).toHaveBeenCalledWith({ name: "TV da recepção", template: "completo" });
   });
 });

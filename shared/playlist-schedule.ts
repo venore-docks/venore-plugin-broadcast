@@ -65,3 +65,21 @@ export function resolveScheduledPlaylistId(
   }
   return best?.playlistId ?? null;
 }
+
+// A tela está DENTRO do horário de funcionamento AGORA? Mesma convenção de days/minutos do slot
+// de dayparting (bit 0 = domingo, fim exclusivo, sem cruzar meia-noite). Qualquer campo null =
+// "sem horário configurado" = sempre ativa (comportamento anterior). Fora da janela, o
+// get-output-state força a tela pra modo espera.
+export function isWithinActiveHours(
+  activeDays: number | null,
+  activeStartMinute: number | null,
+  activeEndMinute: number | null,
+  now: Date,
+  timeZone: string,
+): boolean {
+  if (activeDays == null || activeStartMinute == null || activeEndMinute == null) return true;
+  const parts = getZonedParts(now, timeZone);
+  if ((activeDays & (1 << parts.weekday)) === 0) return false;
+  const minuteOfDay = parts.hour * 60 + parts.minute;
+  return minuteOfDay >= activeStartMinute && minuteOfDay < activeEndMinute;
+}

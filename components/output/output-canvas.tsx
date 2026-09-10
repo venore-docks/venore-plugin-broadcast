@@ -371,6 +371,14 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
             <AlertBanner message={visibleAlertMessage} />
           </>
         )}
+        {/* Fallback de conteúdo da saída — quando a playlist não tem nada tocável E a saída tem
+            fallback configurado, mostra ISSO no lugar da tela de espera genérica do PlaylistLayer.
+            Overlay (por cima do StandbyScreen "no-content" que o PlaylistLayer já renderiza). Sai
+            sozinho quando a playlist volta a ter conteúdo. Não aparece com offline/desconexão
+            (esses têm a própria tela). */}
+        {!state.offline && !disconnected && !state.hasPlayableContent && (state.fallbackUrl || state.fallbackMessage) && (
+          <FallbackScreen url={state.fallbackUrl} message={state.fallbackMessage} />
+        )}
         {/* Overlay de desconexão — SOBRE o último quadro (não substitui como o offline), sai
             sozinho quando a sincronização volta. Não faz sentido empilhar com a tela offline (que
             já é uma StandbyScreen própria e não depende de sync pra estar correta). */}
@@ -378,6 +386,31 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           <StandbyScreen reason="disconnected" brandLogoUrl={state.brandLogoUrl} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Tela de fallback da saída (imagem/vídeo da biblioteca + mensagem livre). Cores fixas — mesma
+// exceção documentada do resto deste canvas (fora do tema shadcn do admin de propósito).
+function FallbackScreen({ url, message }: { url: string | null; message: string | null }) {
+  const isVideo = url ? /\.(mp4|webm)(\?|$)/i.test(url) : false;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ background: "#0f0f0f" }}>
+      {url && isVideo && (
+        <video src={url} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {url && !isVideo && (
+        // eslint-disable-next-line @next/next/no-img-element -- imagem de fallback servida direto, sem next/image
+        <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {message && (
+        <p
+          className="relative max-w-[80%] text-center text-4xl font-semibold"
+          style={{ color: "#FFFFFF", textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}
+        >
+          {message}
+        </p>
+      )}
     </div>
   );
 }

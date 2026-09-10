@@ -51,6 +51,8 @@ import {
   resetOutputPinAttemptsAction,
   rotateOutputTokenAction,
   setOutputAgendaScheduleAction,
+  setOutputFallbackAction,
+  setOutputHoursAction,
   setOutputPlaylistScheduleAction,
   setOutputDrawerAction,
   setOutputFooterAction,
@@ -72,16 +74,32 @@ const playlistInitialState: SetOutputPlaylistState = { error: null, playlistId: 
 
 // Toda saída nasce com sua cena/camadas fixas já prontas (vídeo + agenda + aviso rápido) E com a
 // própria playlist dedicada ("Playlist da <tela>", modelo 1:1 — ver create-output/store.ts). O
-// operador só dá o nome; a playlist já vem junto, pronta pra receber itens na aba Playlists.
+// operador dá o nome e escolhe um modelo (só ajusta visibilidade inicial da agenda/rodapé — tudo
+// mutável depois no card).
 function CreateOutputForm() {
   const [state, formAction, pending] = useActionState(createOutputAction, initialState);
   useActionToast({ pending, error: state.error, successMessage: "Tela criada — a playlist dela já foi criada junto." });
+  const [template, setTemplate] = useState("completo");
 
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2 rounded-panel border border-border bg-card p-3">
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground" htmlFor="output-name">Nome</label>
         <Input id="output-name" name="name" placeholder="TV da recepção" required className="w-56" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground" htmlFor="output-template">Modelo</label>
+        <input type="hidden" name="template" value={template} />
+        <Select value={template} onValueChange={setTemplate}>
+          <SelectTrigger id="output-template" className="w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="completo">Completo (vídeo + agenda + rodapé)</SelectItem>
+            <SelectItem value="video-rodape">Vídeo + rodapé (sem agenda)</SelectItem>
+            <SelectItem value="video">Só vídeo (tela cheia)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <Button type="submit" disabled={pending}>Nova tela</Button>
     </form>
@@ -713,6 +731,118 @@ function OutputScheduleSection({
   );
 }
 
+// Horário de funcionamento — UMA janela (dias + início/fim). Fora dela, a tela entra em modo
+// espera automático (get-output-state força offline). Vazio = sempre no ar. Reaproveita o
+// vocabulário de dias/horário de shared/playlist-schedule.ts (bit 0 = domingo).
+function OutputHoursSection({ output }: { output: BroadcastOutputRecord }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [days, setDays] = useState(output.activeDays ?? 0);
+  const [startTime, setStartTime] = useState(
+    output.activeStartMinute != null ? minutesToTimeLabel(output.activeStartMinute) : "",
+  );
+  const [endTime, setEndTime] = useState(output.activeEndMinute != null ? minutesToTimeLabel(output.activeEndMinute) : "");
+  const [state, formAction, pending] = useActionState(setOutputHoursAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Horário salvo." });
+
+  const configured = output.activeDays != null && output.activeStartMinute != null && output.activeEndMinute != null;
+
+  function clearAndSave() {
+    setDays(0);
+    setStartTime("");
+    setEndTime("");
+    // Deixa o React aplicar antes do submit (os campos são controlados) — mesmo cuidado de outros
+    // forms deste arquivo; um microtask basta aqui porque não há input escondido a sincronizar.
+    queueMicrotask(() => formRef.current?.requestSubmit());
+  }
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Horário de funcionamento</p>
+        <p className="text-xs text-muted-foreground">
+          Fora deste horário a tela entra em espera sozinha. Deixe em branco pra ficar sempre no ar. Horário da instituição.
+        </p>
+      </div>
+      <form ref={formRef} action={formAction} className="space-y-2">
+        <input type="hidden" name="outputId" value={output.id} />
+        <input type="hidden" name="days" value={days} />
+        <input type="hidden" name="startTime" value={startTime} />
+        <input type="hidden" name="endTime" value={endTime} />
+        <div className="flex flex-wrap gap-1">
+          {DAY_LABELS.map((label, dayIndex) => {
+            const bit = 1 << dayIndex;
+            const on = (days & bit) !== 0;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setDays((current) => current ^ bit)}
+                className={`rounded-full border px-2 py-0.5 text-xs ${
+                  on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="time"
+            value={startTime}
+            onChange={(event) => setStartTime(event.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+          <span className="text-xs text-muted-foreground">até</span>
+          <input
+            type="time"
+            value={endTime}
+            onChange={(event) => setEndTime(event.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" disabled={pending}>Salvar horário</Button>
+          {configured && (
+            <Button type="button" variant="ghost" size="sm" onClick={clearAndSave} disabled={pending}>
+              Desligar (sempre no ar)
+            </Button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// Fallback de conteúdo — mensagem livre mostrada quando a playlist não tem vídeo tocável (no lugar
+// da tela de espera genérica). A mídia de fallback (imagem/vídeo) já existe no schema/state; a UI
+// pra escolhê-la fica pra um próximo passo — por ora, só a mensagem.
+function OutputFallbackSection({ output }: { output: BroadcastOutputRecord }) {
+  const [state, formAction, pending] = useActionState(setOutputFallbackAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Fallback salvo." });
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Conteúdo de fallback</p>
+        <p className="text-xs text-muted-foreground">
+          Mostrado quando a playlist fica sem vídeo pra tocar — em vez da tela de espera padrão.
+        </p>
+      </div>
+      <form action={formAction} className="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="outputId" value={output.id} />
+        <Input
+          name="message"
+          defaultValue={output.fallbackMessage ?? ""}
+          placeholder="Ex: Programação em atualização"
+          className="min-w-64 flex-1"
+        />
+        <Button type="submit" size="sm" disabled={pending}>Salvar</Button>
+      </form>
+    </div>
+  );
+}
+
 // Agrupa os três liga/desliga de camada numa única lista — pedido explícito: "crie contexto:
 // botões de abrir/fechar e ativar/desativar" (antes, agenda ficava solta no corpo do card e
 // rodapé/ticker ficavam escondidos dentro de "Mais opções", sem nada explicando que os três são a
@@ -1248,6 +1378,16 @@ function OutputCard({
           <div className="border-t border-border/60 pt-4">
             <OutputStandbySection output={output} />
           </div>
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputHoursSection output={output} />
+            </div>
+          )}
+          {canManageAll && (
+            <div className="border-t border-border/60 pt-4">
+              <OutputFallbackSection output={output} />
+            </div>
+          )}
           <div className="border-t border-border/60 pt-4">
             <OutputLayersSection output={output} />
           </div>

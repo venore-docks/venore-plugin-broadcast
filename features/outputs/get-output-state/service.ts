@@ -11,7 +11,7 @@ import {
   DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
 } from "../../../shared/playback-defaults";
 import { BROADCAST_SETTINGS, type BroadcastAgendaAnimationStyle, type BroadcastAgendaViewSize } from "../../../shared/settings";
-import { resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
+import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
 import { resolveEventEndDate, resolveEventOccurrenceDate } from "../../../shared/weekly-recurrence";
@@ -256,6 +256,20 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const anyPlaylistHasNewsItem = Object.values(playlistItemsByPlaylistId).some((items) =>
     items.some((item) => item.kind === "news"),
   );
+  // "O canal é essencialmente vídeo" — mesmo critério de PlaylistLayer.hasPlayableVideo: sem
+  // nenhum item de vídeo tocável, a view cai numa tela de espera (ou no fallback da saída).
+  const hasPlayableContent = Object.values(playlistItemsByPlaylistId).some((items) =>
+    items.some((item) => item.kind === "video"),
+  );
+
+  // Horário de funcionamento: fora da janela → modo espera automático. O toggle manual (offline)
+  // vence por cima. effectiveOffline substitui output.offline daqui pra frente.
+  const effectiveOffline =
+    output.offline ||
+    !isWithinActiveHours(output.activeDays, output.activeStartMinute, output.activeEndMinute, new Date(), timeZone);
+
+  // Fallback de conteúdo: resolvido só se configurado — a view usa quando não há conteúdo tocável.
+  const fallbackUrl = output.fallbackMediaAssetId ? await resolveMediaAssetUrl(output.fallbackMediaAssetId) : null;
 
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
   for (const layer of layers) {
@@ -286,8 +300,8 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   // Logo da plataforma é usada tanto como fallback de agenda sem logo própria quanto na
   // BrandFooterBar quanto na StandbyScreen (Fase 11) — a tela de espera precisa da logo e da cor
   // de marca mesmo com o footer fechado, então output.offline entra nas duas condições abaixo.
-  const needsBrandLogo = needsAgenda || output.footerOpen || output.offline;
-  const needsBrandColor = output.footerOpen || output.offline;
+  const needsBrandLogo = needsAgenda || output.footerOpen || effectiveOffline;
+  const needsBrandColor = output.footerOpen || effectiveOffline;
   // Largura da agenda E altura da BrandFooterBar dependem da mesma escala (ver
   // BROADCAST_AGENDA_VIEW_SIZE_SCALE) — precisa dela sempre que qualquer uma das duas aparece.
   const needsAgendaViewSize = needsAgenda || output.footerOpen;
@@ -312,8 +326,11 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       outputId: output.id,
       drawerOpen: output.drawerOpen,
       footerOpen: output.footerOpen,
-      offline: output.offline,
+      offline: effectiveOffline,
       tickerEnabled: output.tickerEnabled,
+      hasPlayableContent,
+      fallbackUrl,
+      fallbackMessage: output.fallbackMessage,
       scene,
       layers,
       playlistItemsByPlaylistId,

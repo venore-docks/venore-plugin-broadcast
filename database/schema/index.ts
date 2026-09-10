@@ -281,6 +281,23 @@ export const broadcastOutputs = broadcastSchema.table(
     // preguiçoso em routes/out/actions.ts). null = sem proteção, comportamento anterior inalterado.
     // Continua `text` (hash é texto) — nenhuma migração estrutural na Fase 9.
     pin: text("pin"),
+    // Fallback de conteúdo desta tela: quando a playlist não resolve nada tocável (vazia, arquivos
+    // sumidos, tudo fora da janela de validade), a view mostra ISTO no lugar da tela de espera
+    // genérica. fallbackMediaAssetId = imagem/vídeo da biblioteca (id cru, sem FK — resolução via
+    // @/contexts/media em get-output-state); fallbackMessage = texto livre. Os dois null = tela de
+    // espera branded padrão (comportamento anterior).
+    fallbackMediaAssetId: text("fallback_media_asset_id"),
+    fallbackMessage: text("fallback_message"),
+    // Horário de funcionamento — FORA da janela, a tela entra em modo espera automaticamente (a
+    // view mostra a StandbyScreen). Reaproveita o vocabulário de shared/playlist-schedule.ts:
+    // active_days é bitmask (bit 0 = domingo), start/end em minutos desde a meia-noite (hora de
+    // parede da instituição), fim exclusivo, sem cruzar meia-noite. Os três preenchidos = janela
+    // ativa; qualquer um null = sem horário, tela sempre no ar (comportamento anterior). O toggle
+    // manual "Modo espera" (offline) continua funcionando por cima — se offline=true, fica em
+    // espera independente do horário.
+    activeDays: integer("active_days"),
+    activeStartMinute: integer("active_start_minute"),
+    activeEndMinute: integer("active_end_minute"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
