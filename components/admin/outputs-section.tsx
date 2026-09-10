@@ -1702,7 +1702,10 @@ function OutputDetail({
         </Tabs>
       </CardContent>
       <CardFooter className="border-t-primary/20 bg-primary/8">
-        <div className="w-full">
+        {/* Sempre visível (independe da aba aberta) — copiar o link da TV é a ação mais comum do
+            card inteiro. "Recarregar a TV" fica ao lado por ser a outra ação rápida do dia a dia. */}
+        <div className="w-full space-y-2">
+          <CopyOutputUrlButton token={output.token} />
           <ReloadOutputButton outputId={output.id} />
         </div>
       </CardFooter>
