@@ -159,7 +159,7 @@ export default async function BroadcastAdminPage() {
     resolvePickableMediaById(agendas, (agenda) => agenda.logoMediaAssetId),
     resolvePickableMediaById(agendaEvents, (event) => event.coverMediaAssetId),
     hasOutputsAccess ? resolveOutputPlaylistIds(outputs) : Promise.resolve({} as Record<string, string | null>),
-    hasFullAccess || hasPlaylistsAccess
+    hasFullAccess || hasPlaylistsAccess || hasOutputsAccess
       ? Promise.all(
           playlists.map(async (playlist) => {
             const result = await listPlaylistItems({ playlistId: playlist.id });
@@ -194,6 +194,10 @@ export default async function BroadcastAdminPage() {
       outputs={outputs}
       playlists={playlists}
       outputPlaylistById={outputPlaylistById}
+      itemsByPlaylist={itemsByPlaylist}
+      itemMediaById={playlistItemMediaById}
+      agendas={agendas}
+      agendaEvents={agendaEvents}
       schedulesByOutputId={outputPlaylistSchedulesByOutputId}
       canManageAll={hasFullAccess}
       agendaNamesByOutputId={agendaNamesByOutputId}

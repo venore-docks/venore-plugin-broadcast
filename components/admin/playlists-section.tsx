@@ -633,7 +633,7 @@ function PlaylistItemRow({
 // dispara reorderPlaylistItemsAction de verdade (mesmo mecanismo de "reenviar a lista inteira" de
 // antes) via requestSubmit() logo depois. serverOrder ressincroniza a ordem local sempre que a
 // playlist muda de fora (item adicionado/removido, ou o servidor confirmando o próprio drag).
-function SortablePlaylistItems({
+export function SortablePlaylistItems({
   playlistId,
   items,
   itemMediaById,
@@ -1173,7 +1173,7 @@ function AddMetricsBoardItemForm({
 // formulários sempre abertos lado a lado — reduz o ruído visual e dá largura cheia pro formulário
 // ativo (a causa raiz do card de "página web" quebrado era espaço insuficiente numa grade de 2
 // colunas; com só um formulário por vez, ele sempre tem a largura inteira da seção).
-function PlaylistAddSection({
+export function PlaylistAddSection({
   playlist,
   agendas,
   agendaEvents,

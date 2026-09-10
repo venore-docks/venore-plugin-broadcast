@@ -4,14 +4,18 @@ import { useActionState, useEffect, useId, useRef, useState, type ReactNode } fr
 import * as QRCode from "qrcode";
 import {
   Check,
-  ChevronDown,
-  ChevronUp,
+  Clock,
   Copy,
+  ExternalLink,
   EyeOff,
+  KeyRound,
+  Layers,
+  ListVideo,
   PanelBottomClose,
   PanelBottomOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   Power,
   PowerOff,
   QrCode,
@@ -19,34 +23,43 @@ import {
   ScrollText,
   ShieldAlert,
   ShieldCheck,
-  Siren,
   Snowflake,
   Trash2,
   Tv,
 } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
-import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from "@venore/plugin-sdk/ui";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@venore/plugin-sdk/ui";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
 import { Slider } from "@venore/plugin-sdk/ui";
 import { Switch } from "@venore/plugin-sdk/ui";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
+import type { PickableMedia } from "@venore/plugin-sdk/ui";
 import { ConfirmDeleteButton } from "./confirm-delete-form";
 import { ListDropdownBadge } from "./list-badge";
+import { MasterDetail, useUrlParam, type MasterDetailEntry } from "./master-detail";
+import { PlaylistAddSection, SortablePlaylistItems } from "./playlists-section";
 // Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
 // de playlists-section.tsx/agenda-section.tsx.
-import type { BroadcastOutputRecord, BroadcastPlaylistRecord, BroadcastPlaylistScheduleSlot } from "../../contracts/types";
+import type {
+  BroadcastAgendaEventRecord,
+  BroadcastAgendaRecord,
+  BroadcastOutputRecord,
+  BroadcastPlaylistItemRecord,
+  BroadcastPlaylistRecord,
+  BroadcastPlaylistScheduleSlot,
+} from "../../contracts/types";
 import type { OutputBeaconSummary } from "../../runtime/output-beacon";
 import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared/playlist-schedule";
-import { STATUS_BORDER_CLASSNAME, StatusBadge } from "./status-dot";
+import { StatusBadge } from "./status-dot";
 import { outputItemStatus } from "./status";
 import {
   bulkOutputActionAction,
-  clearTakeoverAction,
   createOutputAction,
   deleteOutputAction,
   duplicateOutputAction,
-  publishTakeoverAction,
   setOutputFrozenAction,
   setOutputGroupAction,
   getConnectedOutputIpsAction,
@@ -1177,48 +1190,6 @@ function DuplicateOutputButton({ outputId }: { outputId: string }) {
   );
 }
 
-// Takeover de urgência — cobre TODAS as telas em tela cheia (evacuação, recado crítico), inclusive
-// as em modo espera. Diferente do aviso rápido (lower third que empurra, e que agora mora na aba
-// Dashboard — ver dashboard-section.tsx). Só mensagem por ora; a imagem existe no schema/state, a
-// UI pra escolhê-la fica pra depois.
-function TakeoverPanel() {
-  const publishFormRef = useRef<HTMLFormElement>(null);
-  const [publishState, publishFormAction, publishPending] = useActionState(publishTakeoverAction, initialState);
-  useActionToast({
-    pending: publishPending,
-    error: publishState.error,
-    successMessage: "Comunicado publicado em todas as telas.",
-    onSuccess: () => publishFormRef.current?.reset(),
-  });
-  const [clearState, clearFormAction, clearPending] = useActionState(clearTakeoverAction, initialState);
-  useActionToast({ pending: clearPending, error: clearState.error, successMessage: "Comunicado removido." });
-
-  return (
-    <div className="space-y-2 rounded-panel border border-destructive/40 bg-destructive/5 p-3">
-      <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
-        <Siren className="size-4" aria-hidden="true" /> Comunicado de urgência
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Cobre <strong>todas</strong> as telas em tela cheia — inclusive as em modo espera. Some sozinho depois do tempo.
-      </p>
-      <form ref={publishFormRef} action={publishFormAction} className="flex flex-wrap items-end gap-2">
-        <div className="min-w-64 flex-1 space-y-1">
-          <label className="text-xs text-muted-foreground" htmlFor="takeover-message">Mensagem</label>
-          <Input id="takeover-message" name="message" placeholder="EVACUAÇÃO — sigam para a saída mais próxima" required />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs text-muted-foreground" htmlFor="takeover-duration">Segundos na tela</label>
-          <Input id="takeover-duration" name="durationSeconds" type="number" defaultValue={120} className="w-24" />
-        </div>
-        <Button type="submit" variant="destructive" disabled={publishPending}>Publicar comunicado</Button>
-      </form>
-      <form action={clearFormAction}>
-        <Button type="submit" variant="outline" size="sm" disabled={clearPending}>Remover agora</Button>
-      </form>
-    </div>
-  );
-}
-
 // Resumo "o que esta tela consome" — pedido explícito: "Rota mais clara: Hoje temos Agenda e
 // Playlist que é consumida em Tela". Antes só dava pra ver o vínculo tela↔agenda do lado da
 // AGENDA (AgendaOutputsForm em agenda-section.tsx); olhando pra uma tela não havia como saber
@@ -1429,17 +1400,209 @@ function useOutputLiveStatus(): OutputLiveStatus {
   return status;
 }
 
-// Card fechável — pedido explícito: "o card de tela pode 'fechar', esconder todas as informações
-// mantendo apenas o Cover, Nome, badge de playlist e agenda [...] quando o card estiver fechado,
-// ainda deve aparecer o footer com o botão de copiar link". Fechado, só CardContent (playlist/
-// camadas/PIN) some; Cover+CardHeader (nome + status row) e o CardFooter (link) continuam de pé —
-// copiar o link da TV é a ação mais comum do card inteiro, faz sentido continuar alcançável mesmo
-// fechado. Estado só local (não persiste entre reloads) — é um jeito de reduzir ruído visual
-// olhando a grade inteira, não uma preferência de configuração da tela.
-function OutputCard({
+
+// ---------------------------------------------------------------------------------------------------
+// Layout master-detail (v1.7): lista de telas a esquerda, detalhe da selecionada a direita com 4
+// abas (Conteudo / Layout / Disponibilidade / Acesso). Substitui o grid de cards gigantes - cada
+// card empilhava ~10 secoes de config abertas de uma vez. Ver components/admin/master-detail.tsx.
+// ---------------------------------------------------------------------------------------------------
+
+// Modelo de playlist da tela: toda tela nasce com uma playlist propria (ownerOutputId === tela).
+// Pode passar a tocar a playlist de OUTRA tela (recepcao + catracas mostrando o mesmo) - nesse
+// caso o editor de itens fica na tela dona, e aqui so um resumo + atalho.
+function buildPlaylistOptions(
+  output: BroadcastOutputRecord,
+  ownPlaylist: BroadcastPlaylistRecord | null,
+  outputs: BroadcastOutputRecord[],
+  playlists: BroadcastPlaylistRecord[],
+): BroadcastPlaylistRecord[] {
+  const options: BroadcastPlaylistRecord[] = [];
+  if (ownPlaylist) options.push({ ...ownPlaylist, name: "Playlist propria desta tela" });
+
+  const ownerByOutputId = new Map(playlists.filter((p) => p.ownerOutputId).map((p) => [p.ownerOutputId as string, p]));
+  for (const other of outputs) {
+    if (other.id === output.id) continue;
+    const otherOwned = ownerByOutputId.get(other.id);
+    if (otherOwned) options.push({ ...otherOwned, name: `Playlist da tela "${other.name}"` });
+  }
+
+  for (const shared of playlists) {
+    if (!shared.ownerOutputId) options.push({ ...shared, name: `Compartilhada: ${shared.name}` });
+  }
+  return options;
+}
+
+function OutputContentTab({
+  output,
+  ownPlaylist,
+  playlistId,
+  onPlaylistChange,
+  playlists,
+  outputs,
+  outputPlaylistById,
+  itemsByPlaylist,
+  itemMediaById,
+  agendaEventById,
+  agendas,
+  agendaEvents,
+  scheduleSlots,
+  canManageAll,
+}: {
+  output: BroadcastOutputRecord;
+  ownPlaylist: BroadcastPlaylistRecord | null;
+  playlistId: string | null;
+  onPlaylistChange: (playlistId: string | null) => void;
+  playlists: BroadcastPlaylistRecord[];
+  outputs: BroadcastOutputRecord[];
+  outputPlaylistById: Record<string, string | null>;
+  itemsByPlaylist: Record<string, BroadcastPlaylistItemRecord[]>;
+  itemMediaById: Record<string, PickableMedia | null>;
+  agendaEventById: Record<string, BroadcastAgendaEventRecord>;
+  agendas: BroadcastAgendaRecord[];
+  agendaEvents: BroadcastAgendaEventRecord[];
+  scheduleSlots: BroadcastPlaylistScheduleSlot[];
+  canManageAll: boolean;
+}) {
+  const options = buildPlaylistOptions(output, ownPlaylist, outputs, playlists);
+  const playingOwn = ownPlaylist != null && playlistId === ownPlaylist.id;
+  const currentPlaylist = playlists.find((playlist) => playlist.id === playlistId) ?? null;
+
+  // Outras telas que tocam ESTA playlist propria agora (aviso "alterar aqui muda nelas tambem").
+  const alsoPlayedBy = playingOwn
+    ? outputs
+        .filter((other) => other.id !== output.id && outputPlaylistById[other.id] === ownPlaylist!.id)
+        .map((other) => other.name)
+    : [];
+
+  const ownerOutput =
+    currentPlaylist?.ownerOutputId && currentPlaylist.ownerOutputId !== output.id
+      ? (outputs.find((other) => other.id === currentPlaylist.ownerOutputId) ?? null)
+      : null;
+  const currentItemCount = currentPlaylist ? (itemsByPlaylist[currentPlaylist.id] ?? []).length : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Playlist</p>
+        <p className="text-xs text-muted-foreground">
+          Cada tela tem a propria playlist. Aponte para a de outra tela quando duas telas devem mostrar o mesmo.
+        </p>
+        <SetOutputPlaylistForm
+          output={output}
+          playlists={options}
+          currentPlaylistId={playlistId}
+          onPlaylistChange={onPlaylistChange}
+        />
+      </div>
+
+      {playingOwn && ownPlaylist ? (
+        <>
+          {alsoPlayedBy.length > 0 && (
+            <p className="rounded-panel border border-warning-border bg-warning-soft p-2 text-xs text-warning">
+              Tambem toca em: <span className="font-medium">{alsoPlayedBy.join(", ")}</span>. Alterar os itens aqui muda em
+              todas.
+            </p>
+          )}
+          <SortablePlaylistItems
+            playlistId={ownPlaylist.id}
+            items={itemsByPlaylist[ownPlaylist.id] ?? []}
+            itemMediaById={itemMediaById}
+            agendaEventById={agendaEventById}
+          />
+          <PlaylistAddSection playlist={ownPlaylist} agendas={agendas} agendaEvents={agendaEvents} />
+        </>
+      ) : (
+        <div className="space-y-1.5 rounded-panel border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+          <p>
+            Esta tela toca{" "}
+            <span className="font-medium text-foreground">{currentPlaylist?.name ?? "nenhuma playlist"}</span>
+            {currentPlaylist ? ` (${currentItemCount} ${currentItemCount === 1 ? "item" : "itens"})` : ""}.
+          </p>
+          {ownerOutput && (
+            <a
+              href={`?tela=${ownerOutput.id}&aba=conteudo`}
+              className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+            >
+              Editar os itens em Telas &rsaquo; {ownerOutput.name}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </a>
+          )}
+        </div>
+      )}
+
+      {canManageAll && (
+        <div className="border-t border-border/60 pt-4">
+          <OutputScheduleSection output={output} playlists={playlists} slots={scheduleSlots} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutputAvailabilityTab({ output, canManageAll }: { output: BroadcastOutputRecord; canManageAll: boolean }) {
+  return (
+    <div className="space-y-4">
+      <OutputStandbySection output={output} />
+      {canManageAll && (
+        <div className="border-t border-border/60 pt-4">
+          <OutputHoursSection output={output} />
+        </div>
+      )}
+      {canManageAll && (
+        <div className="border-t border-border/60 pt-4">
+          <OutputFallbackSection output={output} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OutputAccessTab({
+  output,
+  pinBlocked,
+  canManageAll,
+}: {
+  output: BroadcastOutputRecord;
+  pinBlocked: boolean;
+  canManageAll: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <OutputPinSection output={output} pinBlocked={pinBlocked} />
+      <div className="space-y-2 border-t border-border/60 pt-4">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Link da TV</p>
+        <p className="text-xs text-muted-foreground">Abra este link no navegador da TV. O QR code evita digitar no controle.</p>
+        <CopyOutputUrlButton token={output.token} />
+        <OutputQrToggle token={output.token} />
+        {canManageAll && (
+          <ConfirmDeleteButton
+            action={rotateOutputTokenAction}
+            fields={{ outputId: output.id }}
+            title="Gerar novo link"
+            description="Gerar um link novo para esta tela? O link atual para de funcionar na hora - voce vai precisar reabrir o link novo em cada TV que usava o antigo."
+            confirmLabel="Gerar novo link"
+            successMessage="Link novo gerado."
+            icon={<RotateCw className="size-4" />}
+            label="Gerar novo link"
+            variant="ghost"
+            className="w-full"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutputDetail({
   output,
   playlists,
-  currentPlaylistId,
+  outputs,
+  outputPlaylistById,
+  itemsByPlaylist,
+  itemMediaById,
+  agendaEventById,
+  agendas,
+  agendaEvents,
   agendaNames,
   connectedIps,
   telemetry,
@@ -1450,7 +1613,13 @@ function OutputCard({
 }: {
   output: BroadcastOutputRecord;
   playlists: BroadcastPlaylistRecord[];
-  currentPlaylistId: string | null;
+  outputs: BroadcastOutputRecord[];
+  outputPlaylistById: Record<string, string | null>;
+  itemsByPlaylist: Record<string, BroadcastPlaylistItemRecord[]>;
+  itemMediaById: Record<string, PickableMedia | null>;
+  agendaEventById: Record<string, BroadcastAgendaEventRecord>;
+  agendas: BroadcastAgendaRecord[];
+  agendaEvents: BroadcastAgendaEventRecord[];
   agendaNames: string[];
   connectedIps: string[];
   telemetry: OutputBeaconSummary[];
@@ -1459,43 +1628,20 @@ function OutputCard({
   allGroups: string[];
   canManageAll: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-  // Estado otimista da playlist da tela — a troca (SetOutputPlaylistForm) reflete no badge
-  // "Playlist:" e na faixa de status do card na hora, sem revalidatePath. Revalidação estrutural
-  // (create/delete/reorder) ainda recarrega a página e remonta o card via `key` (ver OutputsSection).
-  const [playlistId, setPlaylistId] = useState(currentPlaylistId);
+  const ownPlaylist = playlists.find((playlist) => playlist.ownerOutputId === output.id) ?? null;
+  const [playlistId, setPlaylistId] = useState(outputPlaylistById[output.id] ?? null);
+  const [tab, setTab] = useUrlParam("aba", "conteudo");
   const playlistName = playlists.find((playlist) => playlist.id === playlistId)?.name ?? null;
-  const status = outputItemStatus(Boolean(playlistName));
-  // O seletor de troca de playlist só oferece: a playlist dedicada DESTA tela + playlists
-  // compartilhadas (sem tela dona). A playlist dedicada de OUTRA tela nunca aparece — apontar duas
-  // telas pra mesma playlist dedicada não faz sentido no modelo 1:1 (ver database/schema/index.ts).
-  const selectablePlaylists = playlists.filter(
-    (playlist) => !playlist.ownerOutputId || playlist.ownerOutputId === output.id,
-  );
 
   return (
-    <Card className={`gap-3 border-l-4 ${STATUS_BORDER_CLASSNAME[status.tone]}`}>
+    <Card className="gap-3">
       <OutputCoverPreview token={output.token} />
       <CardHeader>
-        <CardTitle className="truncate">{output.name}</CardTitle>
-        <CardAction className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setCollapsed((previous) => !previous)}
-            aria-label={collapsed ? "Expandir tela" : "Recolher tela"}
-          >
-            {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="min-w-0 flex-1 truncate">{output.name}</CardTitle>
           {canManageAll && <DuplicateOutputButton outputId={output.id} />}
-          {canManageAll && (
-            <DeleteOutputButton
-              outputId={output.id}
-              dedicatedPlaylistName={playlists.find((playlist) => playlist.ownerOutputId === output.id)?.name ?? null}
-            />
-          )}
-        </CardAction>
+          {canManageAll && <DeleteOutputButton outputId={output.id} dedicatedPlaylistName={ownPlaylist?.name ?? null} />}
+        </div>
         <div className="mt-1">
           <OutputStatusRow
             playlistName={playlistName}
@@ -1504,86 +1650,104 @@ function OutputCard({
             telemetry={telemetry}
           />
         </div>
+        {canManageAll && (
+          <div className="mt-2">
+            <OutputGroupField output={output} allGroups={allGroups} />
+          </div>
+        )}
       </CardHeader>
-      {/* Cada seção com rótulo + frase de contexto curta, separadas por divisor — pedido
-          explícito: "é difícil identificar o que é cada seção, qual é o contexto de cada
-          opção". */}
-      {!collapsed && (
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Playlist</p>
-            <p className="text-xs text-muted-foreground">
-              Cada tela já tem a própria playlist — monte o conteúdo dela na aba Playlists. Troque aqui só pra apontar esta tela
-              pra uma playlist compartilhada.
-            </p>
-            <SetOutputPlaylistForm
+      <CardContent>
+        <Tabs value={tab ?? "conteudo"} onValueChange={setTab}>
+          <TabsList className="w-full">
+            <TabsTrigger value="conteudo" className="flex-1">
+              <ListVideo className="size-4" /> Conteudo
+            </TabsTrigger>
+            <TabsTrigger value="layout" className="flex-1">
+              <Layers className="size-4" /> Layout
+            </TabsTrigger>
+            <TabsTrigger value="disponibilidade" className="flex-1">
+              <Clock className="size-4" /> Disponibilidade
+            </TabsTrigger>
+            <TabsTrigger value="acesso" className="flex-1">
+              <KeyRound className="size-4" /> Acesso
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="conteudo" className="pt-4">
+            <OutputContentTab
               output={output}
-              playlists={selectablePlaylists}
-              currentPlaylistId={playlistId}
+              ownPlaylist={ownPlaylist}
+              playlistId={playlistId}
               onPlaylistChange={setPlaylistId}
+              playlists={playlists}
+              outputs={outputs}
+              outputPlaylistById={outputPlaylistById}
+              itemsByPlaylist={itemsByPlaylist}
+              itemMediaById={itemMediaById}
+              agendaEventById={agendaEventById}
+              agendas={agendas}
+              agendaEvents={agendaEvents}
+              scheduleSlots={scheduleSlots}
+              canManageAll={canManageAll}
             />
-          </div>
-          {canManageAll && (
-            <div className="border-t border-border/60 pt-4">
-              <OutputScheduleSection output={output} playlists={playlists} slots={scheduleSlots} />
-            </div>
-          )}
-          <div className="border-t border-border/60 pt-4">
-            <OutputStandbySection output={output} />
-          </div>
-          {canManageAll && (
-            <div className="border-t border-border/60 pt-4">
-              <OutputGroupField output={output} allGroups={allGroups} />
-            </div>
-          )}
-          {canManageAll && (
-            <div className="border-t border-border/60 pt-4">
-              <OutputHoursSection output={output} />
-            </div>
-          )}
-          {canManageAll && (
-            <div className="border-t border-border/60 pt-4">
-              <OutputFallbackSection output={output} />
-            </div>
-          )}
-          <div className="border-t border-border/60 pt-4">
+          </TabsContent>
+          <TabsContent value="layout" className="pt-4">
             <OutputLayersSection output={output} />
-          </div>
-          <div className="border-t border-border/60 pt-4">
-            <OutputPinSection output={output} pinBlocked={pinBlocked} />
-          </div>
-          <div className="border-t border-border/60 pt-4">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Manutenção</p>
-            <p className="mb-2 text-xs text-muted-foreground">Se a TV travou, mande ela recarregar sem ir até lá.</p>
-            <ReloadOutputButton outputId={output.id} />
-          </div>
-        </CardContent>
-      )}
-      {/* Fica de pé mesmo com o card fechado — pedido explícito. Cor própria (primary sólido, em
-          vez do variant="outline" neutro de antes) pra deixar claro que é AQUI que se copia o
-          link, a ação mais comum do card inteiro; o fundo com tinta de primary reforça o mesmo
-          sinal na seção inteira, não só no botão. */}
+          </TabsContent>
+          <TabsContent value="disponibilidade" className="pt-4">
+            <OutputAvailabilityTab output={output} canManageAll={canManageAll} />
+          </TabsContent>
+          <TabsContent value="acesso" className="pt-4">
+            <OutputAccessTab output={output} pinBlocked={pinBlocked} canManageAll={canManageAll} />
+          </TabsContent>
+        </Tabs>
+      </CardContent>
       <CardFooter className="border-t-primary/20 bg-primary/8">
-        <div className="w-full space-y-2">
-          <CopyOutputUrlButton token={output.token} />
-          <OutputQrToggle token={output.token} />
-          {canManageAll && (
-            <ConfirmDeleteButton
-              action={rotateOutputTokenAction}
-              fields={{ outputId: output.id }}
-              title="Gerar novo link"
-              description="Gerar um link novo para esta tela? O link atual para de funcionar na hora — você vai precisar reabrir o link novo em cada TV que usava o antigo."
-              confirmLabel="Gerar novo link"
-              successMessage="Link novo gerado."
-              icon={<RotateCw className="size-4" />}
-              label="Gerar novo link"
-              variant="ghost"
-              className="w-full"
-            />
-          )}
+        <div className="w-full">
+          <ReloadOutputButton outputId={output.id} />
         </div>
       </CardFooter>
     </Card>
+  );
+}
+
+function CreateOutputDialog() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" className="w-full">
+          <Plus className="size-4" /> Nova tela
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Nova tela</DialogTitle>
+          <DialogDescription>A playlist dela e criada junto. Tudo o mais se ajusta depois.</DialogDescription>
+        </DialogHeader>
+        <CreateOutputForm />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GroupsDialog({ outputs }: { outputs: BroadcastOutputRecord[] }) {
+  const hasGroups = outputs.some((output) => output.groupName);
+  if (!hasGroups) return null;
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline" className="w-full">
+          Grupos
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Grupos de telas</DialogTitle>
+          <DialogDescription>Acoes em lote para todas as telas de um grupo.</DialogDescription>
+        </DialogHeader>
+        <GroupsPanel outputs={outputs} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1591,6 +1755,10 @@ export function OutputsSection({
   outputs,
   playlists,
   outputPlaylistById,
+  itemsByPlaylist = {},
+  itemMediaById = {},
+  agendas = [],
+  agendaEvents = [],
   schedulesByOutputId = {},
   canManageAll = true,
   agendaNamesByOutputId = {},
@@ -1598,21 +1766,42 @@ export function OutputsSection({
   outputs: BroadcastOutputRecord[];
   playlists: BroadcastPlaylistRecord[];
   outputPlaylistById: Record<string, string | null>;
+  itemsByPlaylist?: Record<string, BroadcastPlaylistItemRecord[]>;
+  itemMediaById?: Record<string, PickableMedia | null>;
+  agendas?: BroadcastAgendaRecord[];
+  agendaEvents?: BroadcastAgendaEventRecord[];
   schedulesByOutputId?: Record<string, BroadcastPlaylistScheduleSlot[]>;
-  // false pra um ator sem broadcast.manage (só broadcast.outputs.manage — "responsável" por
-  // telas específicas, ver page.tsx) — esconde criar/apagar tela. Atribuição de responsáveis nunca
-  // aparece aqui — é exclusiva do Superadmin, ver responsibles-section.tsx.
+  // false pra um ator sem broadcast.manage (so broadcast.outputs.manage - "responsavel" por
+  // telas especificas, ver page.tsx) - esconde criar/apagar tela + grupos + programacao.
   canManageAll?: boolean;
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
   const { ipsByToken: connectedIpsByToken, blockedTokens, telemetryByToken } = useOutputLiveStatus();
   const allGroups = [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort();
+  const agendaEventById = Object.fromEntries(agendaEvents.map((event) => [event.id, event]));
+
+  const entries: MasterDetailEntry[] = outputs.map((output) => {
+    const hasPlaylist = Boolean(outputPlaylistById[output.id]);
+    const ips = connectedIpsByToken[output.token] ?? [];
+    return {
+      id: output.id,
+      name: output.name,
+      status: outputItemStatus(hasPlaylist),
+      groupKey: output.groupName,
+      groupLabel: output.groupName,
+      attention: !hasPlaylist || output.offline,
+      badge:
+        ips.length > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-success-border bg-success-soft px-1.5 py-0.5 text-xs font-medium text-success">
+            <Tv className="size-3" aria-hidden="true" />
+            {ips.length}
+          </span>
+        ) : undefined,
+    };
+  });
 
   return (
-    <div className="space-y-4">
-      {canManageAll && <TakeoverPanel />}
-      {canManageAll && <GroupsPanel outputs={outputs} />}
-      {canManageAll && <CreateOutputForm />}
+    <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         Novo na hora de ligar uma TV?{" "}
         <a
@@ -1621,43 +1810,53 @@ export function OutputsSection({
           rel="noopener noreferrer"
           className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
         >
-          Abrir o guia de configuração
+          Abrir o guia de configuracao
         </a>{" "}
-        (dá pra imprimir).
+        (da pra imprimir).
       </p>
-      {outputs.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          {canManageAll ? "Nenhuma tela cadastrada ainda." : "Nenhuma tela foi atribuída a você ainda."}
-        </p>
-      )}
-      {/* Grid de cards (pedido explícito: "aplica um novo layout com cards em Telas") — mobile
-          primeiro (1 coluna), 2 a partir de sm, 3 a partir de xl (AGENTS.md seção 4). Cada card
-          ganha a mesma faixa colorida por tom (STATUS_BORDER_CLASSNAME) já usada nos cards grandes
-          da Visão Geral (admin-overview-nav.tsx) — o mesmo sinal, em dois lugares. items-start
-          evita o comportamento padrão do Grid (align-items: stretch) — sem isso, abrir um card
-          numa linha esticava os outros da mesma linha pra ficar do mesmo tamanho (mesmo colapsados
-          e sem conteúdo pra preencher aquele espaço), feio esteticamente; cada card agora só
-          ocupa a altura do próprio conteúdo. */}
-      <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {outputs.map((output) => (
-          // key inclui updatedAt: os toggles de controle ao vivo NÃO revalidam a página (guardam
-          // estado otimista local), então o card só deve remontar — descartando esse estado — quando
-          // uma revalidação estrutural (create/delete/reorder/settings) traz um registro novo.
-          <OutputCard
-            key={`${output.id}:${output.updatedAt.getTime()}`}
-            output={output}
-            playlists={playlists}
-            currentPlaylistId={outputPlaylistById[output.id] ?? null}
-            agendaNames={agendaNamesByOutputId[output.id] ?? []}
-            connectedIps={connectedIpsByToken[output.token] ?? []}
-            telemetry={telemetryByToken[output.token] ?? []}
-            pinBlocked={blockedTokens.has(output.token)}
-            scheduleSlots={schedulesByOutputId[output.id] ?? []}
-            allGroups={allGroups}
-            canManageAll={canManageAll}
-          />
-        ))}
-      </div>
+      <MasterDetail
+        paramKey="tela"
+        entries={entries}
+        searchPlaceholder="Buscar tela..."
+        toolbar={
+          canManageAll ? (
+            <div className="flex flex-col gap-2">
+              <CreateOutputDialog />
+              <GroupsDialog outputs={outputs} />
+            </div>
+          ) : undefined
+        }
+        emptyState={
+          <p className="text-sm text-muted-foreground">
+            {canManageAll ? "Nenhuma tela cadastrada ainda." : "Nenhuma tela foi atribuida a voce ainda."}
+          </p>
+        }
+        renderDetail={(id) => {
+          const output = outputs.find((entry) => entry.id === id);
+          if (!output) return null;
+          return (
+            <OutputDetail
+              key={`${output.id}:${output.updatedAt.getTime()}`}
+              output={output}
+              playlists={playlists}
+              outputs={outputs}
+              outputPlaylistById={outputPlaylistById}
+              itemsByPlaylist={itemsByPlaylist}
+              itemMediaById={itemMediaById}
+              agendaEventById={agendaEventById}
+              agendas={agendas}
+              agendaEvents={agendaEvents}
+              agendaNames={agendaNamesByOutputId[output.id] ?? []}
+              connectedIps={connectedIpsByToken[output.token] ?? []}
+              telemetry={telemetryByToken[output.token] ?? []}
+              pinBlocked={blockedTokens.has(output.token)}
+              scheduleSlots={schedulesByOutputId[output.id] ?? []}
+              allGroups={allGroups}
+              canManageAll={canManageAll}
+            />
+          );
+        }}
+      />
     </div>
   );
 }
