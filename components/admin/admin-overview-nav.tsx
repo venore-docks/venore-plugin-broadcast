@@ -67,7 +67,11 @@ export function AdminOverviewNav({ tabs }: { tabs: AdminTab[] }) {
       )}
 
       <Tabs value={value} onValueChange={setValue}>
-        <div className="overflow-x-auto">
+        {/* overflow-y-hidden explícito: setar só overflow-x faz o navegador promover overflow-y de
+            `visible` pra `auto`, e qualquer sobra de 1px na altura da TabsList (anel de foco,
+            StatusDot, alinhamento do ícone) fazia aparecer uma barra de rolagem VERTICAL minúscula
+            no canto — as setinhas pra cima/baixo que pareciam um bug. */}
+        <div className="overflow-x-auto overflow-y-hidden">
           <TabsList className="w-fit">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.key} value={tab.key} className="shrink-0">
