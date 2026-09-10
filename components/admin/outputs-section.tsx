@@ -866,8 +866,9 @@ function OutputGroupControl({
   );
 }
 
-// Cor do card — swatch pequeno à esquerda do nome. O próprio swatch é o <input type="color">
-// (opacidade 0 por cima do quadradinho colorido); mudar salva no blur. O "×" ao lado limpa.
+// Cor do card — pill pequena à esquerda do nome (mais baixa que o texto do título, não uma bola
+// maior que ele). A própria pill é o <input type="color"> (opacidade 0 por cima); mudar salva no
+// blur. O "×" ao lado limpa.
 function OutputColorControl({ output }: { output: BroadcastOutputRecord }) {
   const formRef = useRef<HTMLFormElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
@@ -884,11 +885,11 @@ function OutputColorControl({ output }: { output: BroadcastOutputRecord }) {
       <input type="hidden" name="outputId" value={output.id} />
       <input type="hidden" name="cardColor" ref={colorInputRef} defaultValue={output.cardColor ?? ""} />
       <span
-        className="relative inline-flex size-6 items-center justify-center rounded-full border border-border"
+        className="relative inline-flex h-4 w-7 items-center justify-center rounded-full border border-border"
         style={output.cardColor ? { background: output.cardColor, borderColor: output.cardColor } : undefined}
         title="Cor do card"
       >
-        {!output.cardColor && <Palette className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+        {!output.cardColor && <Palette className="size-2.5 text-muted-foreground" aria-hidden="true" />}
         <input
           type="color"
           aria-label="Cor do card"
@@ -927,23 +928,24 @@ function GroupBulkButton({ groupName, action, label }: { groupName: string; acti
   );
 }
 
-// Liga/desliga "reprodução sincronizada" de um grupo (v1.8). Otimista + envia direto (ref-based
-// requestSubmit, mesmo padrão dos outros toggles deste arquivo).
+// Liga/desliga "reprodução sincronizada" de um grupo (v1.8). O Switch é controlado pelo prop
+// `enabled` (que vem do setting broadcast.syncedGroups, relido via revalidatePath na action) —
+// nada de estado local persistente, que era o bug: o checkbox "desligava" sozinho quando o server
+// component re-renderizava. Enquanto a action está no ar mostra só a intenção do clique.
 function GroupSyncToggle({ groupName, enabled }: { groupName: string; enabled: boolean }) {
   const formRef = useRef<HTMLFormElement>(null);
   const enabledInputRef = useRef<HTMLInputElement>(null);
-  const [checked, setChecked] = useState(enabled);
+  const [pendingValue, setPendingValue] = useState<boolean | null>(null);
   const [state, formAction, pending] = useActionState(setSyncedGroupAction, initialState);
-  useActionToast({
-    pending,
-    error: state.error,
-    successMessage: "Sincronização atualizada.",
-    onError: () => setChecked(enabled),
-  });
+  useActionToast({ pending, error: state.error, successMessage: "Sincronização atualizada." });
+  useEffect(() => {
+    if (!pending) setPendingValue(null);
+  }, [pending]);
   const id = useId();
+  const checked = pending && pendingValue !== null ? pendingValue : enabled;
 
   function handleChange(next: boolean) {
-    setChecked(next);
+    setPendingValue(next);
     if (enabledInputRef.current) enabledInputRef.current.value = next ? "true" : "false";
     formRef.current?.requestSubmit();
   }

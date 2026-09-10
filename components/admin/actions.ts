@@ -62,6 +62,7 @@ import {
 } from "../../index";
 import { getSetting, setSetting } from "@venore/plugin-sdk/settings";
 import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
+import { parseSyncedGroups } from "../../shared/settings";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastOutputRecord } from "../../contracts/types";
@@ -1001,8 +1002,10 @@ export async function updateBroadcastRegionAction(
 }
 
 // Liga/desliga a reprodução sincronizada de um grupo (v1.8). Guarda a lista de nomes no setting
-// broadcast.syncedGroups (JSON array). Não recarrega a página — só o diálogo "Grupos" precisa
-// refletir, e ele relê o setting no próximo open; as TVs pegam o efeito no próximo get-output-state.
+// broadcast.syncedGroups. revalidatePath: o loader do admin relê getBroadcastSyncedGroups e passa
+// `synced`/`syncedGroups` de novo pros cards e pro diálogo "Grupos" — sem isso o Switch do grupo
+// voltava pro estado antigo quando o server component re-renderizava. As TVs pegam o efeito no
+// próximo get-output-state.
 export async function setSyncedGroupAction(
   _prevState: BroadcastActionState,
   formData: FormData,
@@ -1013,21 +1016,16 @@ export async function setSyncedGroupAction(
   const enabled = requireString(formData, "enabled") === "true";
   if (!groupName) return { error: "Grupo é obrigatório." };
 
-  const current = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
-  let groups: string[] = [];
-  const raw = current.success && typeof current.data?.value === "string" ? current.data.value : "[]";
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) groups = parsed.filter((entry): entry is string => typeof entry === "string");
-  } catch {
-    groups = [];
-  }
+  // skipCache: precisa do valor mais recente pra não perder/duplicar grupo quando o admin liga
+  // dois em sequência.
+  const current = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, skipCache: true });
+  const groups = current.success ? parseSyncedGroups(current.data?.value) : [];
 
-  const next = enabled
-    ? [...new Set([...groups, groupName])]
-    : groups.filter((entry) => entry !== groupName);
+  const next = enabled ? [...new Set([...groups, groupName])] : groups.filter((entry) => entry !== groupName);
 
-  const result = await setSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, value: JSON.stringify(next) });
+  // settings.value é jsonb — grava o array direto (não JSON.stringify): assim volta como array de
+  // verdade na leitura, sem depender de como o pg serializa uma string JSON dentro do jsonb.
+  const result = await setSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, value: next });
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -1118,16 +1116,11 @@ export async function getBroadcastRegion(): Promise<string> {
   return result.success && typeof result.data?.value === "string" ? result.data.value : "";
 }
 
-// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups, JSON array).
+// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups). skipCache pra o
+// toggle no admin refletir a verdade logo após salvar.
 export async function getBroadcastSyncedGroups(): Promise<string[]> {
-  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
-  const raw = result.success && typeof result.data?.value === "string" ? result.data.value : "[]";
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
-  } catch {
-    return [];
-  }
+  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, skipCache: true });
+  return result.success ? parseSyncedGroups(result.data?.value) : [];
 }
 
 export async function getBroadcastBrandColor(): Promise<string> {

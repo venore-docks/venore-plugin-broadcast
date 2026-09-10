@@ -10,7 +10,12 @@ import {
   DEFAULT_SLIDE_DURATION_SECONDS,
   DEFAULT_WEBPAGE_SLIDE_DURATION_SECONDS,
 } from "../../../shared/playback-defaults";
-import { BROADCAST_SETTINGS, type BroadcastAgendaAnimationStyle, type BroadcastAgendaViewSize } from "../../../shared/settings";
+import {
+  BROADCAST_SETTINGS,
+  parseSyncedGroups,
+  type BroadcastAgendaAnimationStyle,
+  type BroadcastAgendaViewSize,
+} from "../../../shared/settings";
 import { ensureSyncCursor, resetSyncCursor } from "../../../runtime/sync-cursor";
 import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
@@ -216,18 +221,12 @@ async function resolveAgendaViewSize(): Promise<BroadcastAgendaViewSize> {
   return "grande";
 }
 
-// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups, JSON array). []
-// quando ausente/inválido.
+// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups). skipCache: sem
+// isso, uma TV podia levar até 5 min (TTL do cache de settings) pra pegar que o grupo virou
+// sincronizado. É uma leitura de uma linha; get-output-state já faz várias queries.
 async function resolveSyncedGroups(): Promise<string[]> {
-  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key });
-  const value = result.success ? result.data?.value : null;
-  if (typeof value !== "string" || !value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
-  } catch {
-    return [];
-  }
+  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, skipCache: true });
+  return result.success ? parseSyncedGroups(result.data?.value) : [];
 }
 
 // Fuso da instituição — sempre resolvido (não é lazy como os demais): o client precisa dele pra

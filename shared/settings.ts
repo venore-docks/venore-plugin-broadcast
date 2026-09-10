@@ -106,6 +106,22 @@ export const BROADCAST_SETTINGS = {
 
 export type BroadcastSettingField = keyof typeof BROADCAST_SETTINGS;
 
+// O valor de broadcast.syncedGroups pode voltar do settings-store como string JSON ('["A"]') OU
+// como array já parseado (['A']) dependendo de como o jsonb foi gravado/lido — aceita os dois e
+// sempre devolve string[]. Usado pelo admin (getBroadcastSyncedGroups) e pela view (get-output-state).
+export function parseSyncedGroups(value: unknown): string[] {
+  let arr: unknown = value;
+  if (typeof value === "string") {
+    if (!value.trim()) return [];
+    try {
+      arr = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(arr) ? arr.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
 export type BroadcastAgendaAnimationStyle = "fade" | "cascade";
 
 export type BroadcastAgendaViewSize = "padrao" | "grande" | "extra-grande";
