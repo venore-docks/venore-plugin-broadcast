@@ -76,8 +76,8 @@ export type BroadcastOutputState = {
   // contínuo. Consumidos pelo scheduler client em output-canvas.tsx, nunca pelo server.
   agendaOpenSeconds: number | null;
   agendaPauseSeconds: number | null;
-  // Reprodução sincronizada de grupo (v1.8) — preenchido quando o grupo desta tela está marcado
-  // como sincronizado (setting broadcast.syncedGroups) E ela toca uma playlist com itens. A view
+  // Reprodução sincronizada (v1.8, sempre ligada desde v1.8.4) — preenchido sempre que esta tela
+  // toca uma playlist de vídeo com itens, independente de grupo. A view
   // mostra o item `itemIndex` e dá seek no <video> pra bater `elapsedMs` (há quanto tempo o item
   // começou, medido no SERVIDOR — a view usa um relógio monotônico local a partir daí, sem
   // comparar relógios de máquinas). Ao terminar o item, faz POST em

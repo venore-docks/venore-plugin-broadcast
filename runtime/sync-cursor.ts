@@ -3,13 +3,14 @@
 // feature: sem handler/service/store). Assume um único processo Node de longa duração; num deploy
 // multi-instância isto precisa migrar pra um store compartilhado (Redis etc.).
 //
-// Como funciona: quando um grupo está marcado como "sincronizado" (setting broadcast.syncedGroups)
-// e suas telas tocam a MESMA playlist P, o servidor guarda { qual item, quando começou } pra P.
-// get-output-state devolve isso pra cada TV do grupo; a view mostra o item e dá seek no <video>
-// pra bater `startedAtMs`. Quando qualquer TV do grupo chega ao fim do item (onEnded / timer), ela
-// faz POST em /api/broadcast/output/:token/sync-advance — a primeira que reportar avança o cursor,
-// as outras são ignoradas por ADVANCE_DEBOUNCE_MS. Não é frame-a-frame: fica na casa de 0,5–2s
-// entre telas (rede + seek).
+// Como funciona: sempre que 2+ telas tocam a MESMA playlist P — independente de grupo, sempre
+// ligado desde v1.8.4 — o servidor guarda { qual item, quando começou } pra P. get-output-state
+// devolve isso pra cada TV que toca P; a view mostra o item e dá seek no <video> pra bater
+// `startedAtMs`. Quando qualquer TV chega ao fim do item (onEnded / timer), ela faz POST em
+// /api/broadcast/output/:token/sync-advance — a primeira que reportar avança o cursor, as outras
+// são ignoradas por ADVANCE_DEBOUNCE_MS. Não é frame-a-frame: fica na casa de 0,5–2s entre telas
+// (rede + seek). Uma única tela tocando P sozinha também passa por aqui (cursor com 1 assinante só)
+// — sem custo relevante, é uma leitura de Map em memória.
 
 type SyncCursorEntry = {
   itemIndex: number;

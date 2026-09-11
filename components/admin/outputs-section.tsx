@@ -66,7 +66,6 @@ import {
   setOutputFrozenAction,
   setOutputCardColorAction,
   setOutputGroupAction,
-  setSyncedGroupAction,
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
   getOutputTelemetryAction,
@@ -792,8 +791,10 @@ function OutputScheduleSection({
   );
 }
 
-// Grupo da tela — chip discreto ao lado do nome ("Sem grupo" ou o nome do grupo + ícone quando o
-// grupo está sincronizado). Clicar abre um diálogo pra digitar/escolher o grupo ou tirar do grupo.
+// Grupo da tela — chip discreto ao lado do nome ("Sem grupo" ou o nome do grupo + ícone quando
+// esta tela toca a mesma playlist de outra, dentro ou fora do grupo — reprodução sincronizada é
+// sempre automática desde v1.8.4, não depende de grupo). Clicar abre um diálogo pra digitar/
+// escolher o grupo ou tirar do grupo.
 function OutputGroupControl({
   output,
   allGroups,
@@ -815,21 +816,16 @@ function OutputGroupControl({
           type="button"
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground ui-motion-base hover:border-ring hover:text-foreground"
         >
-          {output.groupName ? (
-            <>
-              {output.groupName}
-              {synced && <RotateCw className="size-3" aria-label="reprodução sincronizada" />}
-            </>
-          ) : (
-            "Sem grupo"
-          )}
+          {output.groupName ?? "Sem grupo"}
+          {synced && <RotateCw className="size-3" aria-label="reprodução sincronizada" />}
         </button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Grupo desta tela</DialogTitle>
           <DialogDescription>
-            Telas no mesmo grupo ganham ações em lote e podem tocar sincronizadas (diálogo Grupos, no topo da lista).
+            Telas no mesmo grupo ganham ações em lote (diálogo Grupos, no topo da lista). Reprodução sincronizada é sempre
+            automática entre quaisquer telas que tocam a mesma playlist, dentro ou fora de um grupo.
           </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-3">
@@ -928,47 +924,14 @@ function GroupBulkButton({ groupName, action, label }: { groupName: string; acti
   );
 }
 
-// Liga/desliga "reprodução sincronizada" de um grupo (v1.8). O Switch é controlado pelo prop
-// `enabled` (que vem do setting broadcast.syncedGroups, relido via revalidatePath na action) —
-// nada de estado local persistente, que era o bug: o checkbox "desligava" sozinho quando o server
-// component re-renderizava. Enquanto a action está no ar mostra só a intenção do clique.
-function GroupSyncToggle({ groupName, enabled }: { groupName: string; enabled: boolean }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const enabledInputRef = useRef<HTMLInputElement>(null);
-  const [pendingValue, setPendingValue] = useState<boolean | null>(null);
-  const [state, formAction, pending] = useActionState(setSyncedGroupAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Sincronização atualizada." });
-  useEffect(() => {
-    if (!pending) setPendingValue(null);
-  }, [pending]);
-  const id = useId();
-  const checked = pending && pendingValue !== null ? pendingValue : enabled;
-
-  function handleChange(next: boolean) {
-    setPendingValue(next);
-    if (enabledInputRef.current) enabledInputRef.current.value = next ? "true" : "false";
-    formRef.current?.requestSubmit();
-  }
-
-  return (
-    <form ref={formRef} action={formAction} className="flex items-center gap-1.5">
-      <input type="hidden" name="groupName" value={groupName} />
-      <input type="hidden" name="enabled" ref={enabledInputRef} defaultValue={enabled ? "false" : "true"} />
-      <label htmlFor={id} className="cursor-pointer text-xs text-muted-foreground">
-        Sincronizar reprodução
-      </label>
-      <Switch id={id} checked={checked} onCheckedChange={handleChange} disabled={pending} />
-    </form>
-  );
-}
-
+// Painel de grupos — sem toggle de sincronização: desde v1.8.4 a reprodução sincronizada é sempre
+// automática pra qualquer conjunto de telas (agrupadas ou não) que tocam a MESMA playlist. Grupo
+// aqui só dá organização (nome) + ações em lote.
 function GroupsPanel({
   outputs,
-  syncedGroups,
   outputPlaylistById,
 }: {
   outputs: BroadcastOutputRecord[];
-  syncedGroups: string[];
   outputPlaylistById: Record<string, string | null>;
 }) {
   const counts = new Map<string, number>();
@@ -989,13 +952,12 @@ function GroupsPanel({
     <div className="space-y-2 rounded-panel border border-border bg-card p-3">
       <p className="text-sm font-medium text-foreground">Grupos de telas</p>
       <p className="text-xs text-muted-foreground">
-        Ações em lote e reprodução sincronizada. Sincronizar só funciona quando as telas do grupo tocam a{" "}
-        <strong>mesma</strong> playlist (aponte uma tela pra playlist de outra na aba Conteúdo) — as TVs mostram o mesmo item,
-        com ajuste de tempo (~1-2s de diferença, não é frame a frame).
+        Ações em lote. Telas que tocam a <strong>mesma</strong> playlist (aponte uma tela pra playlist de outra na aba
+        Conteúdo) sempre reproduzem sincronizadas, dentro ou fora de um grupo — as TVs mostram o mesmo item, com ajuste de
+        tempo (~1-2s de diferença, não é frame a frame).
       </p>
       <div className="space-y-2">
         {groups.map(([name, count]) => {
-          const synced = syncedGroups.includes(name);
           const distinctPlaylists = playlistIdsByGroup.get(name)?.size ?? 0;
           return (
             <div key={name} className="space-y-1.5 border-t border-border/60 pt-2 first:border-t-0 first:pt-0">
@@ -1004,13 +966,10 @@ function GroupsPanel({
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {count} {count === 1 ? "tela" : "telas"}
                 </span>
-                <div className="ml-auto">
-                  <GroupSyncToggle groupName={name} enabled={synced} />
-                </div>
               </div>
-              {synced && distinctPlaylists > 1 && (
+              {distinctPlaylists > 1 && (
                 <p className="rounded-panel border border-warning-border bg-warning-soft p-1.5 text-xs text-warning">
-                  As telas deste grupo tocam playlists diferentes — a sincronização não vai casar. Aponte todas pra mesma
+                  As telas deste grupo tocam playlists diferentes — não vão sincronizar entre si. Aponte todas pra mesma
                   playlist na aba Conteúdo.
                 </p>
               )}
@@ -1789,7 +1748,6 @@ function OutputDetail({
   pinBlocked,
   scheduleSlots,
   allGroups,
-  syncedGroups,
   canManageAll,
 }: {
   output: BroadcastOutputRecord;
@@ -1807,14 +1765,17 @@ function OutputDetail({
   pinBlocked: boolean;
   scheduleSlots: BroadcastPlaylistScheduleSlot[];
   allGroups: string[];
-  syncedGroups: string[];
   canManageAll: boolean;
 }) {
   const ownPlaylist = playlists.find((playlist) => playlist.ownerOutputId === output.id) ?? null;
   const currentPlaylistId = outputPlaylistById[output.id] ?? null;
   const [tab, setTab] = useUrlParam("ver", "conteudo");
   const playlistName = playlists.find((playlist) => playlist.id === currentPlaylistId)?.name ?? null;
-  const groupSynced = Boolean(output.groupName && syncedGroups.includes(output.groupName));
+  // "Sincronizada" agora é uma propriedade de PLAYLIST COMPARTILHADA, não de grupo (v1.8.4) — true
+  // quando alguma outra tela também está tocando a playlist atual desta, dentro ou fora de grupo.
+  const synced = Boolean(
+    currentPlaylistId && outputs.some((other) => other.id !== output.id && outputPlaylistById[other.id] === currentPlaylistId),
+  );
 
   return (
     <Card
@@ -1828,7 +1789,7 @@ function OutputDetail({
         <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {canManageAll && <OutputColorControl output={output} />}
           <CardTitle className="min-w-0 truncate">{output.name}</CardTitle>
-          {canManageAll && <OutputGroupControl output={output} allGroups={allGroups} synced={groupSynced} />}
+          {canManageAll && <OutputGroupControl output={output} allGroups={allGroups} synced={synced} />}
         </div>
         <CardAction className="flex items-center gap-0.5">
           <CopyOutputUrlIconButton token={output.token} />
@@ -1920,7 +1881,7 @@ function CreateOutputDialog() {
   );
 }
 
-function GroupsDialog({ outputs, syncedGroups, outputPlaylistById }: { outputs: BroadcastOutputRecord[]; syncedGroups: string[]; outputPlaylistById: Record<string, string | null> }) {
+function GroupsDialog({ outputs, outputPlaylistById }: { outputs: BroadcastOutputRecord[]; outputPlaylistById: Record<string, string | null> }) {
   const hasGroups = outputs.some((output) => output.groupName);
   if (!hasGroups) return null;
   return (
@@ -1933,9 +1894,9 @@ function GroupsDialog({ outputs, syncedGroups, outputPlaylistById }: { outputs: 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Grupos de telas</DialogTitle>
-          <DialogDescription>Ações em lote e reprodução sincronizada por grupo.</DialogDescription>
+          <DialogDescription>Ações em lote por grupo.</DialogDescription>
         </DialogHeader>
-        <GroupsPanel outputs={outputs} syncedGroups={syncedGroups} outputPlaylistById={outputPlaylistById} />
+        <GroupsPanel outputs={outputs} outputPlaylistById={outputPlaylistById} />
       </DialogContent>
     </Dialog>
   );
@@ -1950,7 +1911,6 @@ export function OutputsSection({
   agendas = [],
   agendaEvents = [],
   schedulesByOutputId = {},
-  syncedGroups = [],
   canManageAll = true,
   agendaNamesByOutputId = {},
 }: {
@@ -1962,7 +1922,6 @@ export function OutputsSection({
   agendas?: BroadcastAgendaRecord[];
   agendaEvents?: BroadcastAgendaEventRecord[];
   schedulesByOutputId?: Record<string, BroadcastPlaylistScheduleSlot[]>;
-  syncedGroups?: string[];
   // false pra um ator sem broadcast.manage (so broadcast.outputs.manage - "responsavel" por
   // telas especificas, ver page.tsx) - esconde criar/apagar tela + grupos + programacao.
   canManageAll?: boolean;
@@ -2015,7 +1974,7 @@ export function OutputsSection({
           canManageAll ? (
             <div className="flex flex-col gap-2">
               <CreateOutputDialog />
-              <GroupsDialog outputs={outputs} syncedGroups={syncedGroups} outputPlaylistById={outputPlaylistById} />
+              <GroupsDialog outputs={outputs} outputPlaylistById={outputPlaylistById} />
               <VideosFolderHealthBadge />
             </div>
           ) : undefined
@@ -2046,7 +2005,6 @@ export function OutputsSection({
               pinBlocked={blockedTokens.has(output.token)}
               scheduleSlots={schedulesByOutputId[output.id] ?? []}
               allGroups={allGroups}
-              syncedGroups={syncedGroups}
               canManageAll={canManageAll}
             />
           );

@@ -12,7 +12,6 @@ import {
 } from "../../../shared/playback-defaults";
 import {
   BROADCAST_SETTINGS,
-  parseSyncedGroups,
   type BroadcastAgendaAnimationStyle,
   type BroadcastAgendaViewSize,
 } from "../../../shared/settings";
@@ -221,14 +220,6 @@ async function resolveAgendaViewSize(): Promise<BroadcastAgendaViewSize> {
   return "grande";
 }
 
-// Nomes de grupo com reprodução sincronizada (setting broadcast.syncedGroups). skipCache: sem
-// isso, uma TV podia levar até 5 min (TTL do cache de settings) pra pegar que o grupo virou
-// sincronizado. É uma leitura de uma linha; get-output-state já faz várias queries.
-async function resolveSyncedGroups(): Promise<string[]> {
-  const result = await getSetting({ key: BROADCAST_SETTINGS.syncedGroups.key, skipCache: true });
-  return result.success ? parseSyncedGroups(result.data?.value) : [];
-}
-
 // Fuso da instituição — sempre resolvido (não é lazy como os demais): o client precisa dele pra
 // formatar QUALQUER data/hora (relógio do rodapé, cards de agenda, "hoje"/"agora"), e é uma
 // leitura de setting de uma linha. Cai no default quando ausente/inválido.
@@ -296,28 +287,28 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
     items.some((item) => item.kind === "video"),
   );
 
-  // Reprodução sincronizada de grupo (v1.8): se o grupo desta tela está marcado como sincronizado
-  // e ela toca uma playlist com itens, o servidor mantém um cursor único por playlist — a 1ª tela
-  // a pedir o estado ancora o grupo (item 0, começando agora); as demais seguem. O avanço vem por
-  // POST em /api/broadcast/output/:token/sync-advance (routes/api/sync-advance).
+  // Reprodução sincronizada (v1.8, v1.8.4 — sempre ligada, independente de grupo): toda tela que
+  // toca uma playlist de vídeo com itens segue o cursor único mantido pelo servidor pra ESSA
+  // playlist — a 1ª tela a pedir o estado ancora o cursor (item 0, começando agora); as demais
+  // (do mesmo grupo, de grupos diferentes ou sem grupo nenhum) seguem, bastando apontar pra mesma
+  // playlist na aba Conteúdo. Pedido explícito: "a sincronização da playlist deve acontecer
+  // SEMPRE em todos os casos, independente do grupo". O avanço vem por POST em
+  // /api/broadcast/output/:token/sync-advance (routes/api/sync-advance).
   const primaryVideoLayer = layers.find((layer) => layer.type === "video" && readStringConfig(layer.config, "playlistId"));
   const primaryPlaylistId = primaryVideoLayer ? readStringConfig(primaryVideoLayer.config, "playlistId") : null;
   const syncItems = primaryPlaylistId ? (playlistItemsByPlaylistId[primaryPlaylistId] ?? []) : [];
   let sync: BroadcastOutputState["sync"] = null;
-  if (output.groupName && primaryPlaylistId && syncItems.length > 0) {
-    const syncedGroups = await resolveSyncedGroups();
-    if (syncedGroups.includes(output.groupName)) {
-      const cursor = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
-      let position = syncItems.findIndex((item) => item.id === cursor.itemId);
-      const active = position === -1 ? (resetSyncCursor(primaryPlaylistId), ensureSyncCursor(primaryPlaylistId, syncItems[0].id)) : cursor;
-      if (position === -1) position = 0;
-      sync = {
-        playlistId: primaryPlaylistId,
-        itemIndex: position,
-        itemId: active.itemId,
-        elapsedMs: Math.max(0, Date.now() - active.startedAtMs),
-      };
-    }
+  if (primaryPlaylistId && syncItems.length > 0) {
+    const cursor = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
+    let position = syncItems.findIndex((item) => item.id === cursor.itemId);
+    const active = position === -1 ? (resetSyncCursor(primaryPlaylistId), ensureSyncCursor(primaryPlaylistId, syncItems[0].id)) : cursor;
+    if (position === -1) position = 0;
+    sync = {
+      playlistId: primaryPlaylistId,
+      itemIndex: position,
+      itemId: active.itemId,
+      elapsedMs: Math.max(0, Date.now() - active.startedAtMs),
+    };
   }
 
   // Horário de funcionamento: fora da janela → modo espera automático. O toggle manual (offline)

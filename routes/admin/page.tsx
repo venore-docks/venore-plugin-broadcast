@@ -40,7 +40,6 @@ import {
   getBroadcastBrandColor,
   getBroadcastNewsExcludeKeywords,
   getBroadcastRegion,
-  getBroadcastSyncedGroups,
   getBroadcastTimezone,
 } from "../../components/admin/actions";
 import { DEFAULT_BROADCAST_TIMEZONE } from "../../shared/timezone";
@@ -100,7 +99,6 @@ export default async function BroadcastAdminPage() {
     newsExcludeKeywords,
     agendaAnimationStyle,
     agendaViewSize,
-    syncedGroups,
   ] = await Promise.all([
     // listPlaylists já se auto-restringe por ator dentro do handler (lista inteira pra
     // broadcast.manage/broadcast.outputs.manage, só as atribuídas pra quem só tem
@@ -121,7 +119,6 @@ export default async function BroadcastAdminPage() {
     hasFullAccess ? getBroadcastNewsExcludeKeywords() : Promise.resolve(""),
     hasFullAccess ? getBroadcastAgendaAnimationStyle() : Promise.resolve("fade"),
     hasFullAccess ? getBroadcastAgendaViewSize() : Promise.resolve("grande"),
-    hasFullAccess ? getBroadcastSyncedGroups() : Promise.resolve([] as string[]),
   ]);
 
   const playlists: BroadcastPlaylistRecord[] = playlistsResult?.success ? playlistsResult.data : [];
@@ -202,7 +199,6 @@ export default async function BroadcastAdminPage() {
       agendas={agendas}
       agendaEvents={agendaEvents}
       schedulesByOutputId={outputPlaylistSchedulesByOutputId}
-      syncedGroups={syncedGroups}
       canManageAll={hasFullAccess}
       agendaNamesByOutputId={agendaNamesByOutputId}
     />

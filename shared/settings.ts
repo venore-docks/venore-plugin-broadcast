@@ -94,33 +94,12 @@ export const BROADCAST_SETTINGS = {
     defaultValue: "",
     label: "Chave do agent de diagnóstico (PowerShell)",
   },
-  // Nomes de grupo (JSON array) cuja reprodução é sincronizada — todas as telas do grupo que
-  // tocam a mesma playlist mostram o mesmo item, com seek pra bater o tempo (v1.8). O servidor
-  // mantém um cursor por playlist (runtime/sync-cursor.ts). Toggle por grupo no diálogo "Grupos".
-  syncedGroups: {
-    key: "broadcast.syncedGroups",
-    defaultValue: "[]",
-    label: "Grupos com reprodução sincronizada",
-  },
+  // v1.8 teve um setting broadcast.syncedGroups (toggle de sincronização por grupo) — removido em
+  // v1.8.4: a sincronização passou a ser sempre ligada pra qualquer tela que toque a mesma
+  // playlist, independente de grupo (pedido explícito do usuário). Ver runtime/sync-cursor.ts.
 } as const;
 
 export type BroadcastSettingField = keyof typeof BROADCAST_SETTINGS;
-
-// O valor de broadcast.syncedGroups pode voltar do settings-store como string JSON ('["A"]') OU
-// como array já parseado (['A']) dependendo de como o jsonb foi gravado/lido — aceita os dois e
-// sempre devolve string[]. Usado pelo admin (getBroadcastSyncedGroups) e pela view (get-output-state).
-export function parseSyncedGroups(value: unknown): string[] {
-  let arr: unknown = value;
-  if (typeof value === "string") {
-    if (!value.trim()) return [];
-    try {
-      arr = JSON.parse(value);
-    } catch {
-      return [];
-    }
-  }
-  return Array.isArray(arr) ? arr.filter((entry): entry is string => typeof entry === "string") : [];
-}
 
 export type BroadcastAgendaAnimationStyle = "fade" | "cascade";
 
