@@ -151,7 +151,7 @@ describe("authorizePlaylistActor", () => {
     isUserAssignedToPlaylist.mockReset();
   });
 
-  it("authorizes immediately when the actor has broadcast.manage, without checking assignment", async () => {
+  it("authorizes immediately when the actor has broadcast.manage, without checking assignment, and reports isFullAccess", async () => {
     authorizeActor.mockImplementation(async (permission: string) =>
       permission === "broadcast.manage" ? { authorized: true, actorId: "admin-1" } : { authorized: false, error: {} },
     );
@@ -159,7 +159,7 @@ describe("authorizePlaylistActor", () => {
     const { authorizePlaylistActor } = await import("./index");
     const result = await authorizePlaylistActor("playlist-1");
 
-    expect(result).toEqual({ authorized: true, actorId: "admin-1" });
+    expect(result).toEqual({ authorized: true, actorId: "admin-1", isFullAccess: true });
     expect(isUserAssignedToPlaylist).not.toHaveBeenCalled();
   });
 
@@ -179,7 +179,7 @@ describe("authorizePlaylistActor", () => {
     expect(isUserAssignedToPlaylist).toHaveBeenCalledWith("playlist-1", "editor-3");
   });
 
-  it("authorizes a scoped editor who IS assigned to the target playlist", async () => {
+  it("authorizes a scoped editor who IS assigned to the target playlist, with isFullAccess false", async () => {
     authorizeActor.mockImplementation(async (permission: string) =>
       permission === "broadcast.playlists.manage"
         ? { authorized: true, actorId: "editor-3" }
@@ -190,7 +190,7 @@ describe("authorizePlaylistActor", () => {
     const { authorizePlaylistActor } = await import("./index");
     const result = await authorizePlaylistActor("playlist-1");
 
-    expect(result).toEqual({ authorized: true, actorId: "editor-3" });
+    expect(result).toEqual({ authorized: true, actorId: "editor-3", isFullAccess: false });
   });
 });
 
@@ -201,7 +201,7 @@ describe("authorizePlaylistItemActor", () => {
     findPlaylistIdByItemId.mockReset();
   });
 
-  it("resolves the item's parent playlist before checking assignment", async () => {
+  it("resolves the item's parent playlist before checking assignment, with isFullAccess false", async () => {
     authorizeActor.mockImplementation(async (permission: string) =>
       permission === "broadcast.playlists.manage"
         ? { authorized: true, actorId: "editor-3" }
@@ -215,7 +215,7 @@ describe("authorizePlaylistItemActor", () => {
 
     expect(findPlaylistIdByItemId).toHaveBeenCalledWith("item-1");
     expect(isUserAssignedToPlaylist).toHaveBeenCalledWith("playlist-1", "editor-3");
-    expect(result).toEqual({ authorized: true, actorId: "editor-3" });
+    expect(result).toEqual({ authorized: true, actorId: "editor-3", isFullAccess: false, playlistId: "playlist-1" });
   });
 
   it("fails when the item does not exist", async () => {
@@ -223,6 +223,33 @@ describe("authorizePlaylistItemActor", () => {
       permission === "broadcast.playlists.manage"
         ? { authorized: true, actorId: "editor-3" }
         : { authorized: false, error: { code: "rbac.authorization.forbidden", message: "forbidden" } },
+    );
+    findPlaylistIdByItemId.mockResolvedValue(null);
+
+    const { authorizePlaylistItemActor } = await import("./index");
+    const result = await authorizePlaylistItemActor("missing-item");
+
+    expect(result.authorized).toBe(false);
+    if (!result.authorized) expect(result.error.code).toBe("broadcast.playlists.item_not_found");
+  });
+
+  it("resolves the item's parent playlist even for broadcast.manage, with isFullAccess true", async () => {
+    authorizeActor.mockImplementation(async (permission: string) =>
+      permission === "broadcast.manage" ? { authorized: true, actorId: "admin-1" } : { authorized: false, error: {} },
+    );
+    findPlaylistIdByItemId.mockResolvedValue("playlist-1");
+
+    const { authorizePlaylistItemActor } = await import("./index");
+    const result = await authorizePlaylistItemActor("item-1");
+
+    expect(findPlaylistIdByItemId).toHaveBeenCalledWith("item-1");
+    expect(isUserAssignedToPlaylist).not.toHaveBeenCalled();
+    expect(result).toEqual({ authorized: true, actorId: "admin-1", isFullAccess: true, playlistId: "playlist-1" });
+  });
+
+  it("fails when the item does not exist, even for broadcast.manage", async () => {
+    authorizeActor.mockImplementation(async (permission: string) =>
+      permission === "broadcast.manage" ? { authorized: true, actorId: "admin-1" } : { authorized: false, error: {} },
     );
     findPlaylistIdByItemId.mockResolvedValue(null);
 

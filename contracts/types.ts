@@ -404,3 +404,43 @@ export type BroadcastDiagEventRecord = {
   detail: Record<string, unknown>;
   createdAt: Date;
 };
+
+// Fila de aprovação + log de auditoria de conteúdo (v1.9) — ver database/schema/index.ts
+// (broadcastContentChanges) e features/content-changes/ pro fluxo completo.
+export const BROADCAST_CONTENT_CHANGE_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "auto_approved",
+  "cancelled",
+  "failed",
+] as const;
+export type BroadcastContentChangeStatus = (typeof BROADCAST_CONTENT_CHANGE_STATUSES)[number];
+
+export const BROADCAST_CONTENT_CHANGE_ENTITY_TYPES = ["playlist_item", "alert", "takeover"] as const;
+export type BroadcastContentChangeEntityType = (typeof BROADCAST_CONTENT_CHANGE_ENTITY_TYPES)[number];
+
+// useCase bate com o slug já usado em beginOperation (ex "broadcast.update-playlist-item") — é a
+// chave do registry de appliers (features/content-changes/shared/appliers.ts), reaplicado com
+// `payload` pra de fato executar a mutação quando aprovada. status "auto_approved" = quem já tinha
+// broadcast.manage — aplicado na hora, mas logado do mesmo jeito (é o registro de auditoria pra
+// esse ator também, não só pra quem passa pela fila).
+export type BroadcastContentChangeRecord = {
+  id: string;
+  useCase: string;
+  entityType: BroadcastContentChangeEntityType;
+  targetId: string | null;
+  playlistId: string | null;
+  // unknown, não Record<string, unknown>: reorder-playlist-items guarda um ARRAY (a ordem antes/
+  // depois), não um objeto — payload/snapshots variam de forma conforme o useCase.
+  payload: unknown;
+  previousSnapshot: unknown;
+  resultSnapshot: unknown;
+  status: BroadcastContentChangeStatus;
+  requestedBy: string;
+  requestedAt: Date;
+  decidedBy: string | null;
+  decidedAt: Date | null;
+  rejectionReason: string | null;
+  failureReason: string | null;
+};

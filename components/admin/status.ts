@@ -58,3 +58,11 @@ export function agendasTabStatus(
   if (needsAttention > 0) return { tone: "warning", label: `${needsAttention} precisa${needsAttention === 1 ? "" : "m"} de atenção` };
   return { tone: "success", label: "Tudo certo" };
 }
+
+// Aba "Aprovações" (v1.9) — warning quando há algo esperando decisão (é a única das abas
+// existentes cujo estado "precisa de atenção" cresce sozinho com o uso normal do sistema, não só
+// com configuração incompleta).
+export function contentChangesTabStatus(pendingCount: number): StatusInfo {
+  if (pendingCount === 0) return { tone: "muted", label: "Nada pendente" };
+  return { tone: "warning", label: `${pendingCount} pendente${pendingCount === 1 ? "" : "s"}` };
+}

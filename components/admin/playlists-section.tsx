@@ -275,11 +275,22 @@ function DeletePlaylistItemButton({ itemId }: { itemId: string }) {
 // mesmo padrão já usado em admin/media/_components/delete-media-button.tsx.
 function PlaylistItemActionsMenu({ item }: { item: BroadcastPlaylistItemRecord }) {
   const [toggleState, toggleAction, togglePending] = useActionState(togglePlaylistItemVisibilityAction, initialState);
-  useActionToast({ pending: togglePending, error: toggleState.error, successMessage: item.hidden ? "Item exibido de novo." : "Item escondido." });
+  useActionToast({
+    pending: togglePending,
+    error: toggleState.error,
+    // Gateado (v1.9): quem só tem broadcast.playlists.manage não aplica na hora — fica pending até
+    // um broadcast.manage aprovar (features/content-changes). Mesmo racional nos outros toasts
+    // abaixo.
+    successMessage: toggleState.pending ? "Enviado para aprovação." : item.hidden ? "Item exibido de novo." : "Item escondido.",
+  });
   const toggleFormRef = useRef<HTMLFormElement>(null);
 
   const [deleteState, deleteAction, deletePending] = useActionState(deletePlaylistItemAction, initialState);
-  useActionToast({ pending: deletePending, error: deleteState.error, successMessage: "Item removido." });
+  useActionToast({
+    pending: deletePending,
+    error: deleteState.error,
+    successMessage: deleteState.pending ? "Enviado para aprovação." : "Item removido.",
+  });
   const deleteFormRef = useRef<HTMLFormElement>(null);
   // "Remover item" abre o AlertDialog em vez de submeter na hora — o próprio DropdownMenu já
   // fecha sozinho ao selecionar um item (comportamento padrão do Radix); o diálogo de confirmação
@@ -416,7 +427,12 @@ function WebpageEmbedHint({ url }: { url: string }) {
 
 function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRecord; onDone: () => void }) {
   const [state, formAction, pending] = useActionState(updatePlaylistItemAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Item atualizado.", onSuccess: onDone });
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: state.pending ? "Enviado para aprovação." : "Item atualizado.",
+    onSuccess: onDone,
+  });
   const [url, setUrl] = useState(item.url ?? "");
   const isVideo =
     item.sourceType === "local" && item.relativePath
@@ -648,7 +664,10 @@ export function SortablePlaylistItems({
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
 }) {
   const [state, formAction, pending] = useActionState(reorderPlaylistItemsAction, initialState);
-  useActionToast({ pending, error: state.error });
+  // Sem successMessage quando aplicado de verdade (silencioso, como sempre foi — o arrasto já é o
+  // próprio feedback visual). Só quando fica pending (v1.9) vale avisar: a ordem que a TV mostra
+  // NÃO mudou ainda, mesmo a lista aqui já refletindo o arrasto (otimista).
+  useActionToast({ pending, error: state.error, successMessage: state.pending ? "Ordem enviada para aprovação." : null });
   const formRef = useRef<HTMLFormElement>(null);
   const itemIdsInputRef = useRef<HTMLInputElement>(null);
 
@@ -737,7 +756,11 @@ function ScanPlaylistFlow({
   useActionToast({
     pending: addPending,
     error: addState.error,
-    successMessage: kind === "video" ? "Vídeos adicionados." : "Imagens adicionadas.",
+    successMessage: addState.pending
+      ? "Enviado para aprovação."
+      : kind === "video"
+        ? "Vídeos adicionados."
+        : "Imagens adicionadas.",
     onSuccess: () => {
       setPreview(null);
       onAdded?.();
@@ -936,7 +959,12 @@ function UploadVideoForm({ playlistId, onAdded }: { playlistId: string; onAdded?
 
 function AddMediaAssetItemForm({ playlistId, onAdded }: { playlistId: string; onAdded?: () => void }) {
   const [state, formAction, pending] = useActionState(addMediaAssetPlaylistItemAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Item adicionado.", onSuccess: onAdded });
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: state.pending ? "Enviado para aprovação." : "Item adicionado.",
+    onSuccess: onAdded,
+  });
 
   return (
     <form action={formAction} className="space-y-3">
@@ -960,7 +988,12 @@ function AddMediaAssetItemForm({ playlistId, onAdded }: { playlistId: string; on
 
 function AddWebpageItemForm({ playlistId, onAdded }: { playlistId: string; onAdded?: () => void }) {
   const [state, formAction, pending] = useActionState(addWebpagePlaylistItemAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Página adicionada.", onSuccess: onAdded });
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: state.pending ? "Enviado para aprovação." : "Página adicionada.",
+    onSuccess: onAdded,
+  });
   // Controlado só pra habilitar o link "Testar" com a URL atual — a submissão continua via
   // FormData (name="url"), igual às outras <Input> não controladas deste arquivo.
   const [url, setUrl] = useState("");
@@ -1043,7 +1076,12 @@ function AddAgendaEventItemForm({
   onAdded?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(addAgendaEventPlaylistItemAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Evento adicionado.", onSuccess: onAdded });
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: state.pending ? "Enviado para aprovação." : "Evento adicionado.",
+    onSuccess: onAdded,
+  });
   const [agendaEventId, setAgendaEventId] = useState("");
 
   const eventsByAgendaId = useMemo(() => {
@@ -1135,7 +1173,12 @@ function AddMetricsBoardItemForm({
   onAdded?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(addMetricsBoardPlaylistItemAction, initialState);
-  useActionToast({ pending, error: state.error, successMessage: "Painel de métricas adicionado.", onSuccess: onAdded });
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: state.pending ? "Enviado para aprovação." : "Painel de métricas adicionado.",
+    onSuccess: onAdded,
+  });
   const [boardToken, setBoardToken] = useState(boards[0]?.token ?? "");
 
   return (

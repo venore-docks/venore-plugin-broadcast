@@ -341,6 +341,51 @@ export { clearTakeoverHandler as clearTakeover } from "./features/takeover/clear
 export type { PublishTakeoverInput, PublishTakeoverResult } from "./features/takeover/publish-takeover/types";
 export type { ClearTakeoverResult } from "./features/takeover/clear-takeover/types";
 
+// Fila de aprovação + log de auditoria de conteúdo (v1.9) — ver features/content-changes/shared/
+// gate.ts pro racional completo. As 9 mutações acima (update/delete/reorder/toggle-visibility de
+// item de playlist, os 6 add-*, publish-alert, publish-takeover) já devolvem GatedMutationResult
+// no lugar do OperationResult puro de antes.
+export type { GatedMutationResult } from "./features/content-changes/shared/gate";
+export {
+  listPendingContentChangesHandler as listPendingContentChanges,
+} from "./features/content-changes/list-pending-content-changes/handler";
+export type { ListPendingContentChangesResult } from "./features/content-changes/list-pending-content-changes/types";
+export {
+  listContentChangeLogHandler as listContentChangeLog,
+} from "./features/content-changes/list-content-change-log/handler";
+export type { ListContentChangeLogResult } from "./features/content-changes/list-content-change-log/types";
+export {
+  listMyContentChangesHandler as listMyContentChanges,
+} from "./features/content-changes/list-my-content-changes/handler";
+export type { ListMyContentChangesResult } from "./features/content-changes/list-my-content-changes/types";
+export {
+  approveContentChangeHandler as approveContentChange,
+} from "./features/content-changes/approve-content-change/handler";
+export type {
+  ApproveContentChangeInput,
+  ApproveContentChangeResult,
+} from "./features/content-changes/approve-content-change/types";
+export {
+  rejectContentChangeHandler as rejectContentChange,
+} from "./features/content-changes/reject-content-change/handler";
+export type {
+  RejectContentChangeInput,
+  RejectContentChangeResult,
+} from "./features/content-changes/reject-content-change/types";
+export {
+  cancelContentChangeHandler as cancelContentChange,
+} from "./features/content-changes/cancel-content-change/handler";
+export type {
+  CancelContentChangeInput,
+  CancelContentChangeResult,
+} from "./features/content-changes/cancel-content-change/types";
+export type {
+  BroadcastContentChangeEntityType,
+  BroadcastContentChangeRecord,
+  BroadcastContentChangeStatus,
+} from "./contracts/types";
+export { BROADCAST_CONTENT_CHANGE_ENTITY_TYPES, BROADCAST_CONTENT_CHANGE_STATUSES } from "./contracts/types";
+
 export type {
   BroadcastAgendaRecord,
   BroadcastAgendaEventRecord,

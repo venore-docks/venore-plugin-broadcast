@@ -20,6 +20,23 @@ const FORBIDDEN_PLAYLIST_ERROR = {
   message: "Você só tem permissão para editar as playlists atribuídas a você.",
 };
 
+// isFullAccess distingue "passou por ter broadcast.manage" de "passou por ter a permission
+// escopada + estar atribuído" — as duas autorizam a MUTAÇÃO em si (nada muda pra quem chama
+// authorizePlaylistActor/authorizePlaylistItemActor direto), mas o fluxo de aprovação de conteúdo
+// (features/content-changes) usa esse campo pra decidir se aplica na hora (auto_approved) ou
+// enfileira pendente até um broadcast.manage aprovar. Só authorizePlaylistActor/
+// authorizePlaylistItemActor carregam isso — agenda/output não fazem parte do escopo de aprovação
+// (decisão do usuário: "playlists + alertas/takeover").
+export type PlaylistScopedAuthorizeResult =
+  | { authorized: true; actorId: string; isFullAccess: boolean }
+  | { authorized: false; error: { code: string; message: string } };
+
+// playlistId sempre resolvido (mesmo pra quem tem broadcast.manage) — o fluxo de aprovação precisa
+// dele pra gravar em broadcast_content_changes.playlist_id independente de quem está mutando.
+export type PlaylistItemScopedAuthorizeResult =
+  | { authorized: true; actorId: string; isFullAccess: boolean; playlistId: string }
+  | { authorized: false; error: { code: string; message: string } };
+
 // Camada de autorização por recurso — pedido explícito: "adicionar um responsável (role editor
 // pra cima) com acesso e permissão para alterar apenas a agenda atribuída" (e o mesmo pra telas).
 // broadcast.manage sempre passa (acesso total, sem checar atribuição nenhuma). Quem só tem a
@@ -73,25 +90,35 @@ export async function authorizeOutputActor(outputId: string): Promise<AuthorizeA
 
 // Mesmo racional de authorizeAgendaActor/authorizeOutputActor, pra playlist — paridade pedida
 // explicitamente (ver manifest.ts, permission broadcast.playlists.manage).
-export async function authorizePlaylistActor(playlistId: string): Promise<AuthorizeActorResult> {
+export async function authorizePlaylistActor(playlistId: string): Promise<PlaylistScopedAuthorizeResult> {
   const full = await authorizeActor("broadcast.manage");
-  if (full.authorized) return full;
+  if (full.authorized) return { ...full, isFullAccess: true };
 
   const scoped = await authorizeActor("broadcast.playlists.manage");
   if (!scoped.authorized) return scoped;
 
   const assigned = await isUserAssignedToPlaylist(playlistId, scoped.actorId);
   if (!assigned) return { authorized: false, error: FORBIDDEN_PLAYLIST_ERROR };
-  return scoped;
+  return { ...scoped, isFullAccess: false };
 }
 
 // create-media-asset-playlist-item e os demais "add-*" já recebem playlistId direto (usam
 // authorizePlaylistActor acima); delete-playlist-item/update-playlist-item/
 // toggle-playlist-item-visibility só recebem itemId — resolve o pai antes de checar atribuição
-// (mesmo padrão de authorizeAgendaEventActor).
-export async function authorizePlaylistItemActor(itemId: string): Promise<AuthorizeActorResult> {
+// (mesmo padrão de authorizeAgendaEventActor). Resolve playlistId SEMPRE, inclusive pra
+// broadcast.manage (pequena mudança de comportamento: antes o branch full retornava sem checar se
+// o item existe — o "not found" só aparecia depois, dentro do service.ts; agora aparece aqui,
+// mesmo resultado pro chamador, só que uma camada antes) — necessário pro fluxo de aprovação de
+// conteúdo gravar playlist_id independente de quem está mutando.
+export async function authorizePlaylistItemActor(itemId: string): Promise<PlaylistItemScopedAuthorizeResult> {
   const full = await authorizeActor("broadcast.manage");
-  if (full.authorized) return full;
+  if (full.authorized) {
+    const playlistId = await findPlaylistIdByItemId(itemId);
+    if (!playlistId) {
+      return { authorized: false, error: { code: "broadcast.playlists.item_not_found", message: "Item não encontrado." } };
+    }
+    return { ...full, isFullAccess: true, playlistId };
+  }
 
   const scoped = await authorizeActor("broadcast.playlists.manage");
   if (!scoped.authorized) return scoped;
@@ -103,7 +130,7 @@ export async function authorizePlaylistItemActor(itemId: string): Promise<Author
 
   const assigned = await isUserAssignedToPlaylist(playlistId, scoped.actorId);
   if (!assigned) return { authorized: false, error: FORBIDDEN_PLAYLIST_ERROR };
-  return scoped;
+  return { ...scoped, isFullAccess: false, playlistId };
 }
 
 export { findAgendaIdsAssignedToUser, findOutputIdsAssignedToUser, findPlaylistIdsAssignedToUser } from "./store";

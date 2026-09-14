@@ -7,12 +7,18 @@ import {
   addMetricsBoardPlaylistItem,
   addScannedPlaylistItems,
   addWebpagePlaylistItem,
+  approveContentChange,
+  cancelContentChange,
   checkWebpageEmbeddable,
   clearAlert,
   createAgenda,
   createAgendaEvent,
   bulkOutputAction,
   clearTakeover,
+  listContentChangeLog,
+  listMyContentChanges,
+  listPendingContentChanges,
+  rejectContentChange,
   createOutput,
   createPlaylist,
   delegateOutput,
@@ -64,10 +70,13 @@ import { getSetting, setSetting } from "@venore/plugin-sdk/settings";
 import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
-import type { BroadcastOutputRecord } from "../../contracts/types";
+import type { BroadcastContentChangeRecord, BroadcastOutputRecord } from "../../contracts/types";
 import type { OutputBeaconSummary, PlaybackStat, VideosFolderHealth } from "../../index";
 
-export type BroadcastActionState = { error: string | null };
+// pending: true só nas 9 actions de conteúdo de playlist gateadas (features/content-changes) —
+// marca que a mudança NÃO foi aplicada, só enfileirada aguardando aprovação de um broadcast.manage.
+// Opcional pra não obrigar as dezenas de outras actions (que nunca passam por isso) a declará-lo.
+export type BroadcastActionState = { error: string | null; pending?: boolean };
 
 // Toggles de controle ao vivo de UMA tela (agenda/rodapé/ticker/ciclo/playlist/PIN) NÃO chamam
 // revalidatePath: re-executar o loader inteiro de BroadcastAdminPage (~15 queries + resolução de
@@ -239,6 +248,10 @@ export async function addScannedPlaylistItemsAction(
   }
 
   const result = await addScannedPlaylistItems({ playlistId, kind, relativePaths });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -258,6 +271,10 @@ export async function addMediaAssetPlaylistItemAction(
     durationSeconds: optionalNumber(formData, "durationSeconds"),
     withAudio: formData.get("withAudio") === "on",
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -277,6 +294,10 @@ export async function addWebpagePlaylistItemAction(
     durationSeconds: optionalNumber(formData, "durationSeconds"),
     withAudio: formData.get("withAudio") === "on",
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -308,6 +329,10 @@ export async function addMetricsBoardPlaylistItemAction(
     title: requireString(formData, "title") || undefined,
     durationSeconds: optionalNumber(formData, "durationSeconds"),
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -333,6 +358,10 @@ export async function updatePlaylistItemAction(
     visibleFrom: optionalDateInZone(formData, "visibleFrom", timeZone) ?? null,
     visibleUntil: optionalDateInZone(formData, "visibleUntil", timeZone) ?? null,
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -350,6 +379,10 @@ export async function addAgendaEventPlaylistItemAction(
     agendaEventId: requireString(formData, "agendaEventId"),
     durationSeconds: optionalNumber(formData, "durationSeconds"),
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -366,6 +399,10 @@ export async function togglePlaylistItemVisibilityAction(
     itemId: requireString(formData, "itemId"),
     hidden: formData.get("hidden") === "true",
   });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -376,6 +413,10 @@ export async function deletePlaylistItemAction(_prevState: BroadcastActionState,
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
   const result = await deletePlaylistItem({ itemId: requireString(formData, "itemId") });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -398,6 +439,10 @@ export async function reorderPlaylistItemsAction(_prevState: BroadcastActionStat
   }
 
   const result = await reorderPlaylistItems({ playlistId, itemIds });
+  if (result.pending) {
+    revalidatePath(returnTo);
+    return { error: null, pending: true };
+  }
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
@@ -1193,4 +1238,70 @@ export async function checkWebpageEmbeddableAction(
 
   const result = await checkWebpageEmbeddable({ url });
   return result.success ? result.data : null;
+}
+
+// Fila de aprovação + log de auditoria de conteúdo (v1.9, features/content-changes). As três
+// leituras seguem o mesmo padrão get*Action de cima ([] em qualquer erro); as três mutações
+// seguem o padrão useActionState de sempre (revalidatePath — mudam a estrutura da fila/log).
+export async function getPendingContentChangesAction(): Promise<BroadcastContentChangeRecord[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await listPendingContentChanges();
+  return result.success ? result.data : [];
+}
+
+export async function getContentChangeLogAction(): Promise<BroadcastContentChangeRecord[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await listContentChangeLog();
+  return result.success ? result.data : [];
+}
+
+export async function getMyContentChangesAction(): Promise<BroadcastContentChangeRecord[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await listMyContentChanges();
+  return result.success ? result.data : [];
+}
+
+export async function approveContentChangeAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await approveContentChange({ changeId: requireString(formData, "changeId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+export async function rejectContentChangeAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await rejectContentChange({
+    changeId: requireString(formData, "changeId"),
+    reason: requireString(formData, "reason"),
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+export async function cancelContentChangeAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await cancelContentChange({ changeId: requireString(formData, "changeId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
 }

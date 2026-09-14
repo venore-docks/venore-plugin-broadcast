@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListVideo,
   Settings as SettingsIcon,
+  ShieldCheck,
   Tv,
   Users,
 } from "lucide-react";
@@ -33,7 +34,7 @@ import type {
   BroadcastPlaylistRecord,
 } from "../../contracts/types";
 import { AdminOverviewNav } from "../../components/admin/admin-overview-nav";
-import { agendasTabStatus, outputsTabStatus, playlistsTabStatus } from "../../components/admin/status";
+import { agendasTabStatus, contentChangesTabStatus, outputsTabStatus, playlistsTabStatus } from "../../components/admin/status";
 import {
   getBroadcastAgendaAnimationStyle,
   getBroadcastAgendaViewSize,
@@ -41,7 +42,11 @@ import {
   getBroadcastNewsExcludeKeywords,
   getBroadcastRegion,
   getBroadcastTimezone,
+  getContentChangeLogAction,
+  getMyContentChangesAction,
+  getPendingContentChangesAction,
 } from "../../components/admin/actions";
+import { ApprovalQueueSection, ContentChangeLogSection, MyContentChangesPanel } from "../../components/admin/content-changes-section";
 import { DEFAULT_BROADCAST_TIMEZONE } from "../../shared/timezone";
 import { resolvePickableMediaById } from "../../components/admin/resolve-pickable-media";
 import { resolveOutputPlaylistIds } from "../../components/admin/resolve-output-playlist-ids";
@@ -99,6 +104,9 @@ export default async function BroadcastAdminPage() {
     newsExcludeKeywords,
     agendaAnimationStyle,
     agendaViewSize,
+    pendingContentChanges,
+    contentChangeLog,
+    myContentChanges,
   ] = await Promise.all([
     // listPlaylists já se auto-restringe por ator dentro do handler (lista inteira pra
     // broadcast.manage/broadcast.outputs.manage, só as atribuídas pra quem só tem
@@ -119,6 +127,12 @@ export default async function BroadcastAdminPage() {
     hasFullAccess ? getBroadcastNewsExcludeKeywords() : Promise.resolve(""),
     hasFullAccess ? getBroadcastAgendaAnimationStyle() : Promise.resolve("fade"),
     hasFullAccess ? getBroadcastAgendaViewSize() : Promise.resolve("grande"),
+    hasFullAccess ? getPendingContentChangesAction() : Promise.resolve([]),
+    hasFullAccess ? getContentChangeLogAction() : Promise.resolve([]),
+    // "Minhas alterações" é pro responsável escopado (playlists atribuídas) acompanhar suas
+    // próprias propostas — broadcast.manage não vê a própria fila aqui, ele já vê tudo em
+    // Aprovações.
+    hasPlaylistsAccess && !hasFullAccess ? getMyContentChangesAction() : Promise.resolve([]),
   ]);
 
   const playlists: BroadcastPlaylistRecord[] = playlistsResult?.success ? playlistsResult.data : [];
@@ -131,6 +145,13 @@ export default async function BroadcastAdminPage() {
   const playlistEditorUserIdsByPlaylistId = playlistEditorsResult?.success ? playlistEditorsResult.data : {};
   const outputPlaylistSchedulesByOutputId = outputSchedulesResult?.success ? outputSchedulesResult.data : {};
   const allUsers = usersResult?.success ? usersResult.data : [];
+
+  // Fila de aprovação/log de auditoria (v1.9) — nomes resolvidos aqui (não no componente) porque
+  // os mesmos playlists/allUsers já estão carregados pra outras abas, sem query extra.
+  const playlistNameById: Record<string, string> = Object.fromEntries(playlists.map((playlist) => [playlist.id, playlist.name]));
+  const userNameById: Record<string, string> = Object.fromEntries(
+    allUsers.map((user) => [user.id, user.name ? `${user.name} (${user.email})` : user.email]),
+  );
 
   const eventsByAgenda: Record<string, typeof agendaEvents> = {};
   for (const event of agendaEvents) {
@@ -204,15 +225,20 @@ export default async function BroadcastAdminPage() {
     />
   );
   const playlistsView = (
-    <PlaylistsSection
-      playlists={playlists}
-      itemsByPlaylist={itemsByPlaylist}
-      itemMediaById={playlistItemMediaById}
-      agendas={agendas}
-      agendaEvents={agendaEvents}
-      outputNamesByPlaylistId={outputNamesByPlaylistId}
-      canManageAll={hasFullAccess}
-    />
+    <div className="space-y-3">
+      {/* Retorna null sozinho quando vazio (myContentChanges só é carregado pro responsável
+          escopado, ver Promise.all acima) — sem condicional aqui. */}
+      <MyContentChangesPanel changes={myContentChanges} playlistNameById={playlistNameById} />
+      <PlaylistsSection
+        playlists={playlists}
+        itemsByPlaylist={itemsByPlaylist}
+        itemMediaById={playlistItemMediaById}
+        agendas={agendas}
+        agendaEvents={agendaEvents}
+        outputNamesByPlaylistId={outputNamesByPlaylistId}
+        canManageAll={hasFullAccess}
+      />
+    </div>
   );
   const agendaView = (
     <AgendaSection
@@ -247,6 +273,18 @@ export default async function BroadcastAdminPage() {
       outputPlaylistById={outputPlaylistById}
       agendaOutputIdsByAgendaId={agendaOutputIdsByAgendaId}
     />
+  );
+  const contentChangesView = (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-foreground">Fila de aprovação</h3>
+        <ApprovalQueueSection pendingChanges={pendingContentChanges} playlistNameById={playlistNameById} userNameById={userNameById} />
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-foreground">Histórico completo</h3>
+        <ContentChangeLogSection changes={contentChangeLog} playlistNameById={playlistNameById} userNameById={userNameById} />
+      </div>
+    </div>
   );
 
   // Semáforo por área (ver status.ts) — reaproveita o mesmo dado já resolvido acima pras views,
@@ -355,6 +393,18 @@ export default async function BroadcastAdminPage() {
       icon: <Users aria-hidden="true" />,
       description: "",
       view: adminsView,
+    },
+    // Aprovações (v1.9) — mesmo gate de "Configurações" (hasFullAccess: é quem decide as
+    // pendências). itemCount/status refletem só a FILA (pendentes), não o histórico completo —
+    // "3 pendentes" é o número que precisa chamar atenção, não o total de linhas do log.
+    hasFullAccess && {
+      key: "content-changes",
+      label: "Aprovações",
+      icon: <ShieldCheck aria-hidden="true" />,
+      description: "Alterações de playlist/alerta propostas por responsáveis escopados, aguardando (ou já decididas) aqui.",
+      view: contentChangesView,
+      status: contentChangesTabStatus(pendingContentChanges.length),
+      itemCount: pendingContentChanges.length,
     },
     // Pacote único (telas + playlists + agenda + mídia) — mesmo gate de "Configurações"
     // (hasFullAccess, não escopo de editor atribuído: toca a instalação inteira).

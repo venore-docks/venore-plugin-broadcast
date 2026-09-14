@@ -494,3 +494,48 @@ export const broadcastOutputDiagEvents = broadcastSchema.table(
     check("broadcast_output_diag_events_level_check", sql`${table.level} in ('info','warning')`),
   ],
 );
+
+// Fila de aprovação + log de auditoria de conteúdo (v1.9) — uma linha por mutação de item de
+// playlist/alerta/takeover, seja ela aplicada na hora (quem tem broadcast.manage, status
+// auto_approved) ou só depois de aprovada (quem só tem a permission escopada broadcast.playlists.
+// manage, status pending até uma decisão). Pedido explícito do usuário: "preciso saber quem
+// alterou a playlist, quando, o que tirou e o que colocou no lugar" + "nenhuma alteração é
+// imediata, ela passa por validação do master admin".
+//
+// useCase bate com o slug já usado em beginOperation (ex "broadcast.update-playlist-item") — é a
+// chave usada pra reaplicar o payload na aprovação (ver features/content-changes/shared/
+// appliers.ts), não uma taxonomia nova.
+//
+// Sem FK em playlistId/targetId de propósito: um registro de auditoria não pode sumir em cascade
+// se a playlist/item referenciado for apagado depois — a linha continua contando a história mesmo
+// órfã (payload/snapshots já carregam os dados relevantes, não dependem do relacionamento vivo).
+export const broadcastContentChanges = broadcastSchema.table(
+  "content_changes",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    useCase: text("use_case").notNull(),
+    entityType: text("entity_type").notNull(),
+    targetId: text("target_id"),
+    playlistId: text("playlist_id"),
+    payload: jsonb("payload").notNull(),
+    previousSnapshot: jsonb("previous_snapshot"),
+    resultSnapshot: jsonb("result_snapshot"),
+    status: text("status").notNull().default("pending"),
+    requestedBy: text("requested_by").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    failureReason: text("failure_reason"),
+  },
+  (table) => [
+    check("broadcast_content_changes_entity_type_check", sql`${table.entityType} in ('playlist_item','alert','takeover')`),
+    check(
+      "broadcast_content_changes_status_check",
+      sql`${table.status} in ('pending','approved','rejected','auto_approved','cancelled','failed')`,
+    ),
+    index("broadcast_content_changes_status_idx").on(table.status),
+    index("broadcast_content_changes_playlist_id_idx").on(table.playlistId),
+    index("broadcast_content_changes_requested_by_idx").on(table.requestedBy),
+  ],
+);
