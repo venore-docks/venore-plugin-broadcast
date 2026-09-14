@@ -275,6 +275,14 @@ export const broadcastOutputs = broadcastSchema.table(
     token: text("token")
       .notNull()
       .$defaultFn(() => crypto.randomUUID()),
+    // Backlog: "expiração/rotação automática opcional do token — hoje só rotação manual". Decisão
+    // (ver comentário em rotate-output-token/service.ts): NÃO expira/rotaciona sozinho — um token
+    // que vira inválido sem aviso derruba a TV até alguém notar e reconfigurar na mão, sem
+    // mecanismo nenhum hoje pra "empurrar" a URL nova pra um dispositivo kiosk. Em vez disso, só
+    // AVISA (idade do token, "considere rotacionar") — quem decide rotacionar continua sendo o
+    // admin. defaultNow() cobre toda saída nova (criação/duplicação) automaticamente, sem precisar
+    // tocar create-output/duplicate-output; rotateOutputToken atualiza no re-set manual.
+    tokenRotatedAt: timestamp("token_rotated_at", { withTimezone: true }).notNull().defaultNow(),
     currentSceneId: text("current_scene_id").references(() => broadcastScenes.id, { onDelete: "set null" }),
     currentPlaylistItemId: text("current_playlist_item_id").references(() => broadcastPlaylistItems.id, {
       onDelete: "set null",

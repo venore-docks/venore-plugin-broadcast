@@ -205,6 +205,10 @@ export type BroadcastOutputRecord = {
   id: string;
   name: string;
   token: string;
+  // Quando o token atual passou a valer (criação da tela, ou a última rotação manual) — só pra
+  // mostrar a idade no admin ("considere rotacionar"), nunca expira/invalida sozinho. Ver
+  // database/schema/index.ts.
+  tokenRotatedAt: Date;
   currentSceneId: string | null;
   currentPlaylistItemId: string | null;
   drawerOpen: boolean;

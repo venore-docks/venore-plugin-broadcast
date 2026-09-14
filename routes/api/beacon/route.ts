@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { isPluginActive } from "@venore/plugin-sdk";
 import { recordOutputBeacon } from "../../../runtime/output-beacon";
+import { checkRateLimit } from "../../../runtime/rate-limit";
 import { logPlayback } from "../../../index";
+
+// 20 por 10s — a view manda isto a cada ~30s (bem mais devagar), folga generosa pra troca de
+// status/reconexão em rajada.
+const RATE_LIMIT = 20;
+const RATE_LIMIT_WINDOW_MS = 10_000;
 
 // Telemetria da TV DE VOLTA pro servidor (viewport / navegador / status / uptime / item tocando) —
 // POST leve disparado pela view a cada ~30s e nas trocas de status. Sem sessão/RBAC de propósito,
@@ -21,6 +27,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   const { token } = await params;
+
+  if (!checkRateLimit(`beacon:${token}`, RATE_LIMIT, RATE_LIMIT_WINDOW_MS)) {
+    return new NextResponse(null, { status: 429 });
+  }
 
   let body: {
     clientId?: unknown;

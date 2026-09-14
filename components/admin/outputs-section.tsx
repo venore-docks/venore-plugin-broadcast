@@ -56,8 +56,9 @@ import type {
 } from "../../contracts/types";
 import type { OutputBeaconSummary } from "../../runtime/output-beacon";
 import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared/playlist-schedule";
-import { StatusBadge } from "./status-dot";
+import { StatusBadge, StatusDot } from "./status-dot";
 import { outputItemStatus } from "./status";
+import type { StatusTone } from "./status";
 import {
   bulkOutputActionAction,
   createOutputAction,
@@ -1696,6 +1697,18 @@ function OutputAvailabilityTab({ output, canManageAll }: { output: BroadcastOutp
   );
 }
 
+// Backlog: "expiração/rotação automática opcional do token — hoje só rotação manual". Decisão:
+// nunca expira/rotaciona sozinho (ver comentário na coluna token_rotated_at, database/schema) —
+// só avisa a IDADE, pra quem administra decidir se vale rotacionar. >180 dias vira aviso (tom
+// warning); sem limite fixo pra "vermelho", é só um sinal, não um bloqueio.
+const TOKEN_AGE_WARNING_DAYS = 180;
+
+function formatTokenAge(rotatedAt: Date): { label: string; tone: StatusTone } {
+  const days = Math.floor((Date.now() - new Date(rotatedAt).getTime()) / (24 * 60 * 60 * 1000));
+  const label = days === 0 ? "Link gerado hoje" : `Link gerado há ${days} ${days === 1 ? "dia" : "dias"}`;
+  return { label, tone: days >= TOKEN_AGE_WARNING_DAYS ? "warning" : "muted" };
+}
+
 function OutputAccessTab({
   output,
   pinBlocked,
@@ -1705,6 +1718,7 @@ function OutputAccessTab({
   pinBlocked: boolean;
   canManageAll: boolean;
 }) {
+  const tokenAge = formatTokenAge(output.tokenRotatedAt);
   return (
     <div className="space-y-4">
       <OutputPinSection output={output} pinBlocked={pinBlocked} />
@@ -1713,6 +1727,11 @@ function OutputAccessTab({
         <p className="text-xs text-muted-foreground">Abra este link no navegador da TV. O QR code evita digitar no controle.</p>
         <CopyOutputUrlButton token={output.token} />
         <OutputQrToggle token={output.token} />
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <StatusDot tone={tokenAge.tone} />
+          {tokenAge.label}
+          {tokenAge.tone === "warning" && " — considere gerar um link novo"}
+        </p>
         {canManageAll && (
           <ConfirmDeleteButton
             action={rotateOutputTokenAction}

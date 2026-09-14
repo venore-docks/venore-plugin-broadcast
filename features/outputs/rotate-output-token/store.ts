@@ -27,7 +27,7 @@ export async function rotateOutputToken(outputId: string): Promise<string> {
   const token = await resolveRandomToken();
   await db
     .update(broadcastOutputs)
-    .set({ token, updatedAt: sql`now()` })
+    .set({ token, tokenRotatedAt: sql`now()`, updatedAt: sql`now()` })
     .where(eq(broadcastOutputs.id, outputId));
   return token;
 }

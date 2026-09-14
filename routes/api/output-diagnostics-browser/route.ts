@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { reportBrowserDiagnostics } from "../../../index";
+import { checkRateLimit } from "../../../runtime/rate-limit";
 import { isPluginActive } from "@venore/plugin-sdk";
 import type { BroadcastBrowserDiagnosticsSnapshot } from "../../../contracts/types";
+
+// 20 por 10s — o reporter manda isto a cada ~20s (DIAGNOSTICS_REPORT_MS em output-canvas.tsx).
+const RATE_LIMIT = 20;
+const RATE_LIMIT_WINDOW_MS = 10_000;
 
 // Chamada pelo reporter em components/output/output-canvas.tsx (fire-and-forget, ver o
 // comentário lá) — sem checagem de sessão/PIN de propósito, mesmo racional das outras rotas de
@@ -14,6 +19,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   const { token } = await params;
+
+  if (!checkRateLimit(`output-diagnostics-browser:${token}`, RATE_LIMIT, RATE_LIMIT_WINDOW_MS)) {
+    return NextResponse.json({ ok: false }, { status: 429 });
+  }
 
   let snapshot: BroadcastBrowserDiagnosticsSnapshot;
   try {

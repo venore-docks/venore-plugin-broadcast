@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { reportAgentDiagnostics } from "../../../index";
+import { checkRateLimit } from "../../../runtime/rate-limit";
 import { isPluginActive } from "@venore/plugin-sdk";
 import type { BroadcastAgentDiagnosticsSnapshot } from "../../../contracts/types";
+
+// 20 por 10s — o script PowerShell reporta a cada ~30s. A X-Diagnostics-Key já autentica quem
+// manda; o rate limit é defesa em profundidade caso a chave vaze junto.
+const RATE_LIMIT = 20;
+const RATE_LIMIT_WINDOW_MS = 10_000;
 
 // Chamada pelo script scripts/broadcast-diag-agent.ps1 (PowerShell puro, sem sessão) — a
 // autenticação é o header X-Diagnostics-Key contra broadcast.diagnosticsAgentKey, verificado
@@ -14,6 +20,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   const { token } = await params;
+
+  if (!checkRateLimit(`output-diagnostics-agent:${token}`, RATE_LIMIT, RATE_LIMIT_WINDOW_MS)) {
+    return NextResponse.json({ error: "Muitas requisições." }, { status: 429 });
+  }
+
   const agentKey = request.headers.get("x-diagnostics-key") ?? "";
 
   let body: { stationLabel?: string; snapshot?: BroadcastAgentDiagnosticsSnapshot };

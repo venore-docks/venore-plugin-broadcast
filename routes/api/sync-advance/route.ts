@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { isPluginActive } from "@venore/plugin-sdk";
 import { publishOutputEvent } from "../../../runtime/output-bus";
+import { checkRateLimit } from "../../../runtime/rate-limit";
 import { advanceSyncCursor } from "../../../runtime/sync-cursor";
 import { findAllOutputTokens } from "../../../shared/output-tokens";
 import { getOutputState } from "../../../index";
+
+// 60 por 10s: bem acima da cadência normal (cada report cai no ADVANCE_DEBOUNCE_MS de 600ms de
+// sync-cursor.ts de qualquer forma — este teto é pra quando o token vaza e alguém floda a rota
+// direto, sem nem esperar o item acabar de verdade).
+const RATE_LIMIT = 60;
+const RATE_LIMIT_WINDOW_MS = 10_000;
 
 // A TV avisa que chegou ao fim do item atual numa reprodução sincronizada de grupo (v1.8). A
 // primeira que reportar avança o cursor da playlist (runtime/sync-cursor.ts); as outras caem no
@@ -17,6 +24,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   const { token } = await params;
+
+  if (!checkRateLimit(`sync-advance:${token}`, RATE_LIMIT, RATE_LIMIT_WINDOW_MS)) {
+    return new NextResponse(null, { status: 429 });
+  }
 
   let body: { itemId?: unknown };
   try {
