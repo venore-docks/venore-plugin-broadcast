@@ -1969,7 +1969,7 @@ export function OutputsSection({
       <MasterDetail
         paramKey="tela"
         entries={entries}
-        searchPlaceholder="Buscar tela..."
+        searchPlaceholder="Buscar tela ou grupo..."
         toolbar={
           canManageAll ? (
             <div className="flex flex-col gap-2">

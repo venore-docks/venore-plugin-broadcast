@@ -1,6 +1,6 @@
 {
   "name": "@venore/plugin-broadcast",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "Broadcast Studio — composição de cenas em camadas com saída para TV (plugin do Venore Docks).",
   "private": true,
   "type": "module",

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useRef, useState, type ReactNode, type RefObject } from "react";
 import { CalendarDays, ExternalLink, ListVideo, Siren, Tv } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
@@ -49,6 +50,82 @@ function AlertTargetField({ targets }: { targets: AlertTargets }) {
   );
 }
 
+// Mini-réplica do AlertBanner de verdade (components/output/layer-renderer.tsx) — mesmo gradiente,
+// mesmo ⚠️, pra "o que eu vou publicar" não ser uma suposição. Só o suficiente pra pegar erro de
+// digitação/formatação antes de ir pra TV ao vivo, não uma simulação pixel-perfect.
+function AlertPreviewMockup({ message }: { message: string }) {
+  return (
+    <div
+      className="flex w-full items-center gap-3 rounded-md px-5 py-4"
+      style={{ background: "linear-gradient(90deg, #B3261E, #E8482C)", color: "#FFFFFF" }}
+    >
+      <span className="text-xl">⚠️</span>
+      <span className="text-base font-semibold">{message}</span>
+    </div>
+  );
+}
+
+// Botão que só publica depois de uma confirmação com preview — pedido do backlog: "preview de
+// alerta/takeover antes de publicar... evita erro indo direto pra TV ao vivo". reportValidity()
+// aciona a validação nativa do form (ex: mensagem vazia) antes mesmo de abrir o diálogo — o botão
+// não é mais type="submit" de propósito, senão o form submeteria direto no clique.
+function PublishWithPreviewButton({
+  formRef,
+  pending,
+  label,
+  variant,
+  renderPreview,
+}: {
+  formRef: RefObject<HTMLFormElement | null>;
+  pending: boolean;
+  label: string;
+  variant?: "default" | "destructive";
+  renderPreview: (message: string) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function handlePreviewClick() {
+    const form = formRef.current;
+    if (!form || !form.reportValidity()) return;
+    setMessage(new FormData(form).get("message")?.toString() ?? "");
+    setOpen(true);
+  }
+
+  return (
+    <>
+      <Button type="button" variant={variant} disabled={pending} onClick={handlePreviewClick}>
+        {label}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar antes de publicar</DialogTitle>
+            <DialogDescription>É isto que vai aparecer na TV — confira o texto antes de ir ao vivo.</DialogDescription>
+          </DialogHeader>
+          {renderPreview(message)}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant={variant}
+              disabled={pending}
+              onClick={() => {
+                setOpen(false);
+                formRef.current?.requestSubmit();
+              }}
+            >
+              Confirmar e publicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // Movido de components/admin/outputs-section.tsx (era QuickAlertPanel lá) — pedido explícito:
 // "o card Aviso rápido vamos separar ele em outro lugar [...] o aviso rápido pode estar lá" (no
 // novo dashboard). Sem mudança de comportamento — mesmo formulário, mesmas actions. Global (não
@@ -85,11 +162,32 @@ function QuickAlertPanel({ targets }: { targets: AlertTargets }) {
           <label className="text-xs text-muted-foreground" htmlFor="alert-duration">Segundos na tela</label>
           <Input id="alert-duration" name="durationSeconds" type="number" defaultValue={30} className="w-24" />
         </div>
-        <Button type="submit" disabled={publishPending}>Publicar aviso</Button>
+        <PublishWithPreviewButton
+          formRef={publishFormRef}
+          pending={publishPending}
+          label="Publicar aviso"
+          renderPreview={(message) => <AlertPreviewMockup message={message} />}
+        />
       </form>
       <form action={clearFormAction}>
         <Button type="submit" variant="outline" size="sm" disabled={clearPending}>Remover agora</Button>
       </form>
+    </div>
+  );
+}
+
+// Mini-réplica do TakeoverScreen de verdade (components/output/output-canvas.tsx) — fundo preto,
+// texto grande centralizado com sombra. Sem a mídia (a UI pra escolhê-la ainda não existe, mesmo
+// racional do comentário abaixo) — só o texto, que é o que dá pra errar digitando.
+function TakeoverPreviewMockup({ message }: { message: string }) {
+  return (
+    <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md" style={{ background: "#0a0a0a" }}>
+      <p
+        className="max-w-[85%] px-4 text-center text-lg font-bold leading-tight"
+        style={{ color: "#FFFFFF", textShadow: "0 4px 24px rgba(0,0,0,0.8)" }}
+      >
+        {message}
+      </p>
     </div>
   );
 }
@@ -128,7 +226,13 @@ function TakeoverPanel({ targets }: { targets: AlertTargets }) {
           <label className="text-xs text-muted-foreground" htmlFor="takeover-duration">Segundos na tela</label>
           <Input id="takeover-duration" name="durationSeconds" type="number" defaultValue={120} className="w-24" />
         </div>
-        <Button type="submit" variant="destructive" disabled={publishPending}>Publicar comunicado</Button>
+        <PublishWithPreviewButton
+          formRef={publishFormRef}
+          pending={publishPending}
+          label="Publicar comunicado"
+          variant="destructive"
+          renderPreview={(message) => <TakeoverPreviewMockup message={message} />}
+        />
       </form>
       <form action={clearFormAction}>
         <Button type="submit" variant="outline" size="sm" disabled={clearPending}>Remover agora</Button>

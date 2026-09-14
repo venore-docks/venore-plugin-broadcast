@@ -95,7 +95,14 @@ export function MasterDetail({
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const list = needle ? entries.filter((entry) => entry.name.toLowerCase().includes(needle)) : entries;
+    // Casa também pelo nome do GRUPO (backlog: "filtro por grupo na lista de telas") — mesma
+    // caixa de busca já existente, sem controle novo: digitar o nome de um grupo isola as
+    // entradas dele, do mesmo jeito que digitar o nome de uma tela isola ela.
+    const list = needle
+      ? entries.filter(
+          (entry) => entry.name.toLowerCase().includes(needle) || (entry.groupLabel?.toLowerCase().includes(needle) ?? false),
+        )
+      : entries;
     return [...list].sort((a, b) => {
       if (Boolean(a.attention) !== Boolean(b.attention)) return a.attention ? -1 : 1;
       return a.name.localeCompare(b.name);
