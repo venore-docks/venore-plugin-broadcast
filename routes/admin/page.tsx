@@ -26,6 +26,7 @@ import {
   listPlaylistEditors,
   listPlaylistItems,
   listPlaylists,
+  listScheduledAlerts,
 } from "../../index";
 import type {
   BroadcastAgendaEventRecord,
@@ -108,6 +109,7 @@ export default async function BroadcastAdminPage() {
     pendingContentChanges,
     contentChangeLog,
     myContentChanges,
+    scheduledAlertsResult,
   ] = await Promise.all([
     // listPlaylists já se auto-restringe por ator dentro do handler (lista inteira pra
     // broadcast.manage/broadcast.outputs.manage, só as atribuídas pra quem só tem
@@ -134,7 +136,11 @@ export default async function BroadcastAdminPage() {
     // próprias propostas — broadcast.manage não vê a própria fila aqui, ele já vê tudo em
     // Aprovações.
     hasPlaylistsAccess && !hasFullAccess ? getMyContentChangesAction() : Promise.resolve([]),
+    // Avisos agendados/recorrentes (v1.9.7) — só quem vê o Dashboard (hasFullAccess) usa.
+    hasFullAccess ? listScheduledAlerts() : Promise.resolve(null),
   ]);
+
+  const scheduledAlerts = scheduledAlertsResult?.success ? scheduledAlertsResult.data : [];
 
   const playlists: BroadcastPlaylistRecord[] = playlistsResult?.success ? playlistsResult.data : [];
   const outputs: BroadcastOutputRecord[] = outputsResult?.success ? outputsResult.data : [];
@@ -347,6 +353,7 @@ export default async function BroadcastAdminPage() {
           agendasCount={agendas.length}
           playlistsInUse={playlistsInUse}
           alertTargets={alertTargets}
+          scheduledAlerts={scheduledAlerts}
         />
       ),
     },

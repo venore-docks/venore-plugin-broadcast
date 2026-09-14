@@ -13,6 +13,7 @@ import {
   clearAlert,
   createAgenda,
   createAgendaEvent,
+  createScheduledAlert,
   bulkOutputAction,
   clearTakeover,
   listContentChangeLog,
@@ -22,6 +23,7 @@ import {
   listPendingContentChanges,
   rebaselineLocalItemIntegrity,
   rejectContentChange,
+  toggleScheduledAlert,
   createOutput,
   createPlaylist,
   delegateOutput,
@@ -30,6 +32,7 @@ import {
   deleteOutput,
   deletePlaylist,
   deletePlaylistItem,
+  deleteScheduledAlert,
   duplicateOutput,
   duplicatePlaylist,
   importAgendaCsv,
@@ -1017,6 +1020,60 @@ export async function clearTakeoverAction(): Promise<BroadcastActionState> {
 
   const result = await clearTakeover();
   if (!result.success) return { error: result.error.message };
+  return { error: null };
+}
+
+// Avisos agendados/recorrentes (v1.9.7) — dias vem como bitmask (mesmo hidden input de days que
+// OutputHoursSection já usa), horários como "HH:MM". revalidatePath: muda a lista mostrada no
+// painel, diferente do aviso manual (que não recarrega a página — a TV reage via SSE).
+export async function createScheduledAlertAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const startMinute = parseTimeToMinutes(requireString(formData, "startTime"));
+  const endMinute = parseTimeToMinutes(requireString(formData, "endTime"));
+  if (startMinute === null || endMinute === null) {
+    return { error: "Escolha o horário de início e fim." };
+  }
+
+  const result = await createScheduledAlert({
+    message: requireString(formData, "message"),
+    target: requireString(formData, "target") || null,
+    activeDays: requireNumber(formData, "days", 0),
+    activeStartMinute: startMinute,
+    activeEndMinute: endMinute,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+export async function deleteScheduledAlertAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await deleteScheduledAlert({ id: requireString(formData, "id") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+export async function toggleScheduledAlertAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await toggleScheduledAlert({ id: requireString(formData, "id"), enabled: formData.get("enabled") === "true" });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
   return { error: null };
 }
 

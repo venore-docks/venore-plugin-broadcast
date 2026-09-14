@@ -11,6 +11,7 @@ import {
   broadcastOutputs,
   broadcastPlaylistItems,
   broadcastScenes,
+  broadcastScheduledAlerts,
   broadcastTakeover,
 } from "../../../database/schema";
 import { isAgendaEventUpcoming } from "../../../shared/agenda-occurrences";
@@ -22,6 +23,7 @@ import type {
   BroadcastOutputRecord,
   BroadcastPlaylistItemRecord,
   BroadcastSceneRecord,
+  BroadcastScheduledAlertRecord,
 } from "../../../contracts/types";
 
 // Datas avulsas de um conjunto de eventos, agrupadas por eventId (ordenadas por início). Uma
@@ -189,6 +191,15 @@ export async function findActiveAlert(output: {
     .orderBy(desc(broadcastAlerts.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+// Todos os avisos recorrentes LIGADOS — tabela pequena (poucas linhas), o filtro "está dentro da
+// janela agora" roda em JS (resolveScheduledAlert, service.ts), mesmo racional de isWithinActiveHours
+// já usado pro horário de funcionamento de saída — não dá pra expressar dia-da-semana+fuso num
+// WHERE sem reimplementar a mesma lógica em SQL.
+export async function findAllEnabledScheduledAlerts(): Promise<BroadcastScheduledAlertRecord[]> {
+  const rows = await db.select().from(broadcastScheduledAlerts).where(eq(broadcastScheduledAlerts.enabled, true));
+  return rows as BroadcastScheduledAlertRecord[];
 }
 
 export async function findActiveTakeover(output: {

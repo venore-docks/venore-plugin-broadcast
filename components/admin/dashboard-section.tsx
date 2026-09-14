@@ -1,18 +1,24 @@
 "use client";
 
 import { useActionState, useRef, useState, type ReactNode, type RefObject } from "react";
-import { CalendarDays, ExternalLink, ListVideo, Siren, Tv } from "lucide-react";
+import { CalendarClock, CalendarDays, ExternalLink, ListVideo, Siren, Tv } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@venore/plugin-sdk/ui";
+import { Switch } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { PlaybackReportPanel } from "./playlists-section";
+import { DAY_LABELS, minutesToTimeLabel } from "../../shared/playlist-schedule";
+import type { BroadcastScheduledAlertRecord } from "../../index";
 import {
   clearAlertAction,
   clearTakeoverAction,
+  createScheduledAlertAction,
+  deleteScheduledAlertAction,
   publishAlertAction,
   publishTakeoverAction,
+  toggleScheduledAlertAction,
   type BroadcastActionState,
 } from "./actions";
 
@@ -241,6 +247,151 @@ function TakeoverPanel({ targets }: { targets: AlertTargets }) {
   );
 }
 
+// Avisos AGENDADOS/RECORRENTES (backlog item 6) — mesma mensagem/alvo do aviso rápido, mas dentro
+// de uma janela dia-da-semana+horário que se repete sozinha (reaproveita o horário de
+// funcionamento já usado em telas — DAY_LABELS/minutesToTimeLabel, shared/playlist-schedule.ts).
+// Sem contador regressivo aqui: o servidor decide sozinho quando está "dentro da janela" a cada
+// vez que uma TV pede o estado (get-output-state/service.ts).
+function CreateScheduledAlertForm({ targets, onCreated }: { targets: AlertTargets; onCreated?: () => void }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [days, setDays] = useState(0);
+  const [state, formAction, pending] = useActionState(createScheduledAlertAction, initialState);
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: "Aviso agendado criado.",
+    onSuccess: () => {
+      formRef.current?.reset();
+      setDays(0);
+      onCreated?.();
+    },
+  });
+
+  return (
+    <form ref={formRef} action={formAction} className="space-y-2">
+      <input type="hidden" name="days" value={days} />
+      <Input name="message" placeholder="Reunião toda segunda às 8h" required />
+      <div className="flex flex-wrap gap-1">
+        {DAY_LABELS.map((label, dayIndex) => {
+          const bit = 1 << dayIndex;
+          const on = (days & bit) !== 0;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setDays((current) => current ^ bit)}
+              className={`rounded-full border px-2 py-0.5 text-xs ${
+                on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="scheduled-alert-start">Das</label>
+          <input
+            id="scheduled-alert-start"
+            type="time"
+            name="startTime"
+            required
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground" htmlFor="scheduled-alert-end">Às</label>
+          <input
+            id="scheduled-alert-end"
+            type="time"
+            name="endTime"
+            required
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          />
+        </div>
+        <AlertTargetField targets={targets} />
+        <Button type="submit" size="sm" disabled={pending}>Agendar aviso</Button>
+      </div>
+    </form>
+  );
+}
+
+function ScheduledAlertToggle({ id, enabled }: { id: string; enabled: boolean }) {
+  const [state, formAction, pending] = useActionState(toggleScheduledAlertAction, initialState);
+  useActionToast({ pending, error: state.error });
+  const formRef = useRef<HTMLFormElement>(null);
+  const enabledInputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <form ref={formRef} action={formAction} className="flex items-center gap-1.5">
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="enabled" ref={enabledInputRef} defaultValue={enabled ? "false" : "true"} />
+      <Switch
+        checked={enabled}
+        disabled={pending}
+        onCheckedChange={(next) => {
+          if (enabledInputRef.current) enabledInputRef.current.value = next ? "true" : "false";
+          formRef.current?.requestSubmit();
+        }}
+      />
+    </form>
+  );
+}
+
+function DeleteScheduledAlertButton({ id }: { id: string }) {
+  const [state, formAction, pending] = useActionState(deleteScheduledAlertAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Aviso agendado removido." });
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="id" value={id} />
+      <Button type="submit" variant="ghost" size="sm" disabled={pending}>Remover</Button>
+    </form>
+  );
+}
+
+function scheduledAlertWindowLabel(alert: BroadcastScheduledAlertRecord): string {
+  const days = DAY_LABELS.filter((_, dayIndex) => (alert.activeDays & (1 << dayIndex)) !== 0).join(", ");
+  return `${days} · ${minutesToTimeLabel(alert.activeStartMinute)}–${minutesToTimeLabel(alert.activeEndMinute)}`;
+}
+
+function ScheduledAlertsPanel({ targets, scheduledAlerts }: { targets: AlertTargets; scheduledAlerts: BroadcastScheduledAlertRecord[] }) {
+  const [showForm, setShowForm] = useState(false);
+
+  return (
+    <div className="space-y-2 rounded-panel border border-border bg-card p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <CalendarClock className="size-4" aria-hidden="true" /> Avisos agendados
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Repete sozinho toda semana, dentro da janela escolhida — sem precisar disparar na mão toda vez.
+      </p>
+      {scheduledAlerts.length > 0 && (
+        <div className="space-y-1.5">
+          {scheduledAlerts.map((alert) => (
+            <div key={alert.id} className="flex flex-wrap items-center gap-2 rounded-panel border border-border/60 p-2 text-xs">
+              <ScheduledAlertToggle id={alert.id} enabled={alert.enabled} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-foreground">{alert.message}</p>
+                <p className="text-muted-foreground">{scheduledAlertWindowLabel(alert)}</p>
+              </div>
+              <DeleteScheduledAlertButton id={alert.id} />
+            </div>
+          ))}
+        </div>
+      )}
+      {showForm ? (
+        <CreateScheduledAlertForm targets={targets} onCreated={() => setShowForm(false)} />
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(true)}>
+          + Agendar aviso
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // Contagem simples (sem clique-pra-navegar, sem status colorido) — os cards grandes com status já
 // existem acima da Tabs (AdminOverviewNav, sempre visíveis independente da aba ativa); repetir o
 // mesmo cartão aqui dentro do Dashboard seria redundante. Isto é só um resumo textual rápido de
@@ -320,12 +471,14 @@ export function DashboardSection({
   agendasCount,
   playlistsInUse,
   alertTargets,
+  scheduledAlerts,
 }: {
   outputsCount: number;
   playlistsCount: number;
   agendasCount: number;
   playlistsInUse: PlaylistInUse[];
   alertTargets: AlertTargets;
+  scheduledAlerts: BroadcastScheduledAlertRecord[];
 }) {
   return (
     <div className="space-y-4">
@@ -335,6 +488,7 @@ export function DashboardSection({
         <SummaryStat icon={<CalendarDays className="size-5" aria-hidden="true" />} label="Agendas" count={agendasCount} />
       </div>
       <QuickAlertPanel targets={alertTargets} />
+      <ScheduledAlertsPanel targets={alertTargets} scheduledAlerts={scheduledAlerts} />
       <TakeoverPanel targets={alertTargets} />
       <PlaylistsInUsePanel playlists={playlistsInUse} />
       <PlaybackReportPanel />

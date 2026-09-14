@@ -351,6 +351,37 @@ export { publishAlertHandler as publishAlert } from "./features/alerts/publish-a
 export { clearAlertHandler as clearAlert } from "./features/alerts/clear-alert/handler";
 export type { PublishAlertInput, PublishAlertResult } from "./features/alerts/publish-alert/types";
 export type { ClearAlertResult } from "./features/alerts/clear-alert/types";
+
+// Avisos agendados/recorrentes (v1.9.7, roadmap item 6) — reaproveita o horário de funcionamento
+// (dia-da-semana + minuto-do-dia, mesmo vocabulário de output.activeDays) em vez de um job/cron:
+// get-output-state checa a cada chamada se algum está dentro da própria janela agora (ver
+// resolveActiveAlertOrScheduled, features/outputs/get-output-state/service.ts).
+export {
+  createScheduledAlertHandler as createScheduledAlert,
+} from "./features/alerts/create-scheduled-alert/handler";
+export type {
+  CreateScheduledAlertInput,
+  CreateScheduledAlertResult,
+} from "./features/alerts/create-scheduled-alert/types";
+export {
+  listScheduledAlertsHandler as listScheduledAlerts,
+} from "./features/alerts/list-scheduled-alerts/handler";
+export type { ListScheduledAlertsResult } from "./features/alerts/list-scheduled-alerts/types";
+export {
+  deleteScheduledAlertHandler as deleteScheduledAlert,
+} from "./features/alerts/delete-scheduled-alert/handler";
+export type {
+  DeleteScheduledAlertInput,
+  DeleteScheduledAlertResult,
+} from "./features/alerts/delete-scheduled-alert/types";
+export {
+  toggleScheduledAlertHandler as toggleScheduledAlert,
+} from "./features/alerts/toggle-scheduled-alert/handler";
+export type {
+  ToggleScheduledAlertInput,
+  ToggleScheduledAlertResult,
+} from "./features/alerts/toggle-scheduled-alert/types";
+export type { BroadcastScheduledAlertRecord } from "./contracts/types";
 // Takeover — comunicado de urgência em tela cheia (cobre TODAS as telas, inclusive as em espera).
 export { publishTakeoverHandler as publishTakeover } from "./features/takeover/publish-takeover/handler";
 export { clearTakeoverHandler as clearTakeover } from "./features/takeover/clear-takeover/handler";

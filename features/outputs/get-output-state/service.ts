@@ -25,6 +25,7 @@ import {
   findActiveAlert,
   findAgendaEventById,
   findAllAgendas,
+  findAllEnabledScheduledAlerts,
   findAllOutputAgendaLinks,
   findAllUpcomingAgendaEvents,
   findActiveTakeover,
@@ -228,6 +229,42 @@ async function resolveTimeZone(): Promise<string> {
   return normalizeTimeZone(result.success ? result.data?.value : null);
 }
 
+// Mesmo formato de target de broadcast_alerts.target, só que em JS puro (não SQL) — os avisos
+// agendados são poucos, o cruzamento com a janela de horário (dia-da-semana + fuso) só dá pra
+// fazer em JS de qualquer forma (ver findAllEnabledScheduledAlerts), então o casamento de alvo
+// acontece no mesmo lugar, por consistência.
+function targetMatchesOutput(target: string | null, output: { id: string; groupName: string | null }): boolean {
+  if (!target) return true;
+  if (target === `output:${output.id}`) return true;
+  if (output.groupName && target === `group:${output.groupName}`) return true;
+  return false;
+}
+
+// Aviso rápido (backlog item 6: "alertas agendados/recorrentes — hoje só disparo manual
+// imediato") — um aviso MANUAL (broadcast_alerts, publish-alert) sempre vence; só cai pro
+// agendado quando não há nenhum manual ativo pra esta saída agora. expiresAt não é a hora real de
+// fim da janela (evitaria matemática de fuso complexa pra converter "hoje às HH:MM" num instante
+// absoluto) — é só um horizonte curto e rolante (agora + 20s): a cada get-output-state chamado
+// enquanto a janela continua aberta, o aviso reaparece com um novo horizonte; quando a janela
+// fecha de vez, a próxima chamada simplesmente não encontra mais o agendamento e o aviso some no
+// próximo poll do client (mesmo poll de segurança de ~15s que já existe).
+async function resolveActiveAlertOrScheduled(
+  output: { id: string; groupName: string | null },
+  timeZone: string,
+): Promise<{ message: string; expiresAt: Date } | null> {
+  const manual = await findActiveAlert(output);
+  if (manual) return manual;
+
+  const scheduled = await findAllEnabledScheduledAlerts();
+  const now = new Date();
+  for (const alert of scheduled) {
+    if (!targetMatchesOutput(alert.target, output)) continue;
+    if (!isWithinActiveHours(alert.activeDays, alert.activeStartMinute, alert.activeEndMinute, now, timeZone)) continue;
+    return { message: alert.message, expiresAt: new Date(Date.now() + 20_000) };
+  }
+  return null;
+}
+
 // Resolve o estado completo pra primeira renderização da view de saída: a página server component
 // chama isto direto (sem round-trip HTTP), e a mesma forma de estado é o que a rota SSE
 // (app/api/broadcast/output/[token]/events) manda como primeiro evento de hydration, e o que
@@ -367,7 +404,9 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       needsWeather ? resolveRegionWeather() : Promise.resolve(null),
       needsNews ? resolveBroadcastNews() : Promise.resolve([]),
       needsAgenda ? resolveAgendaRotation(output.id, timeZone) : Promise.resolve([]),
-      needsAlert ? findActiveAlert({ id: output.id, groupName: output.groupName }) : Promise.resolve(null),
+      needsAlert
+        ? resolveActiveAlertOrScheduled({ id: output.id, groupName: output.groupName }, timeZone)
+        : Promise.resolve(null),
       needsBrandLogo ? getBrandConfig("png").then((brand) => brand.logoUrl) : Promise.resolve(null),
       needsBrandColor ? resolveBrandColor() : Promise.resolve(BROADCAST_SETTINGS.brandColor.defaultValue),
       needsAgenda ? resolveAgendaAnimationStyle() : Promise.resolve(BROADCAST_SETTINGS.agendaAnimationStyle.defaultValue as BroadcastAgendaAnimationStyle),

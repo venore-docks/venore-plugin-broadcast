@@ -188,6 +188,22 @@ export type BroadcastAlertRecord = {
   createdAt: Date;
 };
 
+// Aviso recorrente (v1.9.7) — ver database/schema/index.ts (broadcastScheduledAlerts) pro
+// racional completo. Reaproveita o vocabulário dia-da-semana/minuto-do-dia de
+// shared/playlist-schedule.ts (mesmo formato de output.activeDays/activeStartMinute/
+// activeEndMinute).
+export type BroadcastScheduledAlertRecord = {
+  id: string;
+  message: string;
+  target: BroadcastAlertTarget;
+  activeDays: number;
+  activeStartMinute: number;
+  activeEndMinute: number;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 // Evento com a URL de capa já resolvida (coverMediaAssetId -> coverUrl, via getMediaAsset) —
 // mesmo racional de PlaylistItemSummary: client component de view de saída não resolve mídia
 // sozinho, só recebe a URL pronta. extraDates passa cru (one-off, sem recorrência a resolver);

@@ -36,6 +36,7 @@ const findActiveAlert = vi.fn();
 const findActiveTakeover = vi.fn();
 const findAgendaEventById = vi.fn();
 const findPlaylistScheduleForOutput = vi.fn();
+const findAllEnabledScheduledAlerts = vi.fn();
 vi.mock("./store", () => ({
   findOutputByToken: (...args: unknown[]) => findOutputByToken(...args),
   findSceneById: (...args: unknown[]) => findSceneById(...args),
@@ -48,6 +49,7 @@ vi.mock("./store", () => ({
   findActiveTakeover: (...args: unknown[]) => findActiveTakeover(...args),
   findAgendaEventById: (...args: unknown[]) => findAgendaEventById(...args),
   findPlaylistScheduleForOutput: (...args: unknown[]) => findPlaylistScheduleForOutput(...args),
+  findAllEnabledScheduledAlerts: (...args: unknown[]) => findAllEnabledScheduledAlerts(...args),
 }));
 
 describe("getOutputState", () => {
@@ -68,6 +70,9 @@ describe("getOutputState", () => {
     findActiveTakeover.mockReset();
     findAgendaEventById.mockReset();
     findPlaylistScheduleForOutput.mockReset();
+    findAllEnabledScheduledAlerts.mockReset();
+    // Sem aviso agendado por padrão — os testes de avisos agendados sobrescrevem.
+    findAllEnabledScheduledAlerts.mockResolvedValue([]);
     // Defaults sensatos pra testes que disparam a resolução (agora a camada "video" também
     // dispara clima/logo/cor de marca) mas não se importam com o valor exato.
     getSetting.mockResolvedValue({ success: false });
@@ -475,6 +480,96 @@ describe("getOutputState", () => {
 
     expect(result.success && result.data.activeAlertMessage).toBe("Reunião às 15h no auditório");
     expect(result.success && result.data.activeAlertExpiresAt).toBe(expiresAt.toISOString());
+  });
+
+  // Backlog item 6: "alertas agendados/recorrentes". Timezone default (sem setting configurado,
+  // ver beforeEach) é America/Sao_Paulo (UTC-3, sem horário de verão) — 2026-01-05T12:00:00Z é
+  // segunda-feira 09:00 local.
+  describe("scheduled alerts (avisos agendados/recorrentes)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-05T12:00:00.000Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("usa o aviso agendado quando não há aviso manual ativo e a janela bate com agora", async () => {
+      findOutputByToken.mockResolvedValue({ id: "o1", groupName: null, drawerOpen: false, currentSceneId: "s1" });
+      findSceneById.mockResolvedValue({ id: "s1", name: "Painel" });
+      findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "alert", config: {} }]);
+      findActiveAlert.mockResolvedValue(null);
+      findAllEnabledScheduledAlerts.mockResolvedValue([
+        {
+          id: "sched-1",
+          message: "Reunião semanal às 9h",
+          target: null,
+          activeDays: 1 << 1, // segunda
+          activeStartMinute: 8 * 60,
+          activeEndMinute: 10 * 60,
+          enabled: true,
+        },
+      ]);
+
+      const { getOutputState } = await import("./service");
+      const result = await getOutputState({ token: "tok-1" });
+
+      expect(result.success && result.data.activeAlertMessage).toBe("Reunião semanal às 9h");
+    });
+
+    it("um aviso MANUAL ativo vence sobre o agendado", async () => {
+      findOutputByToken.mockResolvedValue({ id: "o1", groupName: null, drawerOpen: false, currentSceneId: "s1" });
+      findSceneById.mockResolvedValue({ id: "s1", name: "Painel" });
+      findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "alert", config: {} }]);
+      findActiveAlert.mockResolvedValue({ message: "Aviso manual", expiresAt: new Date("2026-01-05T12:05:00.000Z") });
+      findAllEnabledScheduledAlerts.mockResolvedValue([
+        { id: "sched-1", message: "Agendado", target: null, activeDays: 1 << 1, activeStartMinute: 8 * 60, activeEndMinute: 10 * 60, enabled: true },
+      ]);
+
+      const { getOutputState } = await import("./service");
+      const result = await getOutputState({ token: "tok-1" });
+
+      expect(result.success && result.data.activeAlertMessage).toBe("Aviso manual");
+    });
+
+    it("ignora um aviso agendado fora da janela de dia/horário", async () => {
+      findOutputByToken.mockResolvedValue({ id: "o1", groupName: null, drawerOpen: false, currentSceneId: "s1" });
+      findSceneById.mockResolvedValue({ id: "s1", name: "Painel" });
+      findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "alert", config: {} }]);
+      findActiveAlert.mockResolvedValue(null);
+      findAllEnabledScheduledAlerts.mockResolvedValue([
+        // Terça-feira, não segunda — "agora" (segunda 09h) não bate.
+        { id: "sched-1", message: "Terça", target: null, activeDays: 1 << 2, activeStartMinute: 8 * 60, activeEndMinute: 10 * 60, enabled: true },
+      ]);
+
+      const { getOutputState } = await import("./service");
+      const result = await getOutputState({ token: "tok-1" });
+
+      expect(result.success && result.data.activeAlertMessage).toBeNull();
+    });
+
+    it("ignora um aviso agendado cujo target não bate com esta saída/grupo", async () => {
+      findOutputByToken.mockResolvedValue({ id: "o1", groupName: null, drawerOpen: false, currentSceneId: "s1" });
+      findSceneById.mockResolvedValue({ id: "s1", name: "Painel" });
+      findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "alert", config: {} }]);
+      findActiveAlert.mockResolvedValue(null);
+      findAllEnabledScheduledAlerts.mockResolvedValue([
+        {
+          id: "sched-1",
+          message: "Só pra outra tela",
+          target: "output:o2",
+          activeDays: 1 << 1,
+          activeStartMinute: 8 * 60,
+          activeEndMinute: 10 * 60,
+          enabled: true,
+        },
+      ]);
+
+      const { getOutputState } = await import("./service");
+      const result = await getOutputState({ token: "tok-1" });
+
+      expect(result.success && result.data.activeAlertMessage).toBeNull();
+    });
   });
 
   it("skips a media asset that no longer resolves instead of failing the whole state", async () => {

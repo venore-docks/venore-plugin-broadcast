@@ -263,6 +263,27 @@ export const broadcastAlerts = broadcastSchema.table("alerts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Aviso RECORRENTE (backlog item 6: "alertas agendados/recorrentes — hoje só disparo manual
+// imediato"). Deliberadamente SEM job/cron nenhum — reaproveita o mesmo mecanismo de "horário de
+// funcionamento" que outputs.active_days/active_start_minute/active_end_minute já usa
+// (isWithinActiveHours, shared/playlist-schedule.ts): get-output-state checa a cada chamada se
+// ALGUM aviso agendado está dentro da própria janela AGORA (dia da semana + hora, fuso da
+// instituição) e usa como fallback quando não há um aviso MANUAL ativo (broadcast_alerts) — nunca
+// os dois ao mesmo tempo. Diferente de broadcast_alerts, os três campos de janela são NOT NULL
+// (um agendamento sem janela não faria sentido, viraria só um aviso manual permanente — já existe
+// via publish-alert). target: mesmo formato de alerts.target (null/"group:x"/"output:id").
+export const broadcastScheduledAlerts = broadcastSchema.table("scheduled_alerts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  message: text("message").notNull(),
+  target: text("target"),
+  activeDays: integer("active_days").notNull(),
+  activeStartMinute: integer("active_start_minute").notNull(),
+  activeEndMinute: integer("active_end_minute").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Uma linha por "saída" (URL exibida na TV). token é o único mecanismo de acesso à view de saída
 // (sem sessão/RBAC — ver contracts/types.ts) — gerado em create-output/store.ts como um slug do
 // nome (curto, fácil de digitar num controle remoto de TV), não mais um UUID; o $defaultFn aqui é
