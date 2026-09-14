@@ -46,7 +46,12 @@ async function downloadAssetBytes(url: string): Promise<Buffer> {
 // os barrels públicos de media, e resolveOutputPlaylistIds (components/admin/, já usado por
 // routes/admin/page.tsx pro mesmo propósito: achar qual playlist uma saída toca, que mora na
 // config da camada "video", não numa coluna direta de outputs).
-export async function exportBroadcastBundle(): Promise<ExportBroadcastBundleResult> {
+// outputIds: filtro opcional (backlog item 14 — "exportar/duplicar config de tela pra outro
+// ambiente"). Sem filtro, exporta a instalação inteira (comportamento original, usado pela aba
+// Importar/Exportar). Com filtro, o pacote sai enxuto — só as telas pedidas + só as playlists e
+// agendas que ELAS de fato usam (não a biblioteca inteira), pra "exportar uma tela" não vazar
+// configuração de outras telas do ambiente de origem sem necessidade.
+export async function exportBroadcastBundle(options: { outputIds?: string[] } = {}): Promise<ExportBroadcastBundleResult> {
   const [agendasResult, agendaEventsResult, playlistsResult, outputsResult, agendaOutputsResult, categoriesResult] = await Promise.all([
     listAgendas(),
     listAgendaEvents(),
@@ -62,10 +67,29 @@ export async function exportBroadcastBundle(): Promise<ExportBroadcastBundleResu
   if (!agendaOutputsResult.success) return agendaOutputsResult;
   if (!categoriesResult.success) return categoriesResult;
 
-  const agendas = agendasResult.data;
-  const playlists = playlistsResult.data;
-  const outputs = outputsResult.data;
+  let outputs = outputsResult.data;
+  if (options.outputIds && options.outputIds.length > 0) {
+    const wantedOutputIds = new Set(options.outputIds);
+    outputs = outputs.filter((output) => wantedOutputIds.has(output.id));
+    if (outputs.length === 0) {
+      return {
+        success: false,
+        error: { code: "broadcast.export-broadcast-bundle.output_not_found", message: "Tela não encontrada." },
+      };
+    }
+  }
+  const outputIdsForFilter = options.outputIds && options.outputIds.length > 0 ? new Set(outputs.map((output) => output.id)) : null;
+
+  const outputPlaylistById = await resolveOutputPlaylistIds(outputs);
+  const playlists = outputIdsForFilter
+    ? playlistsResult.data.filter((playlist) => Object.values(outputPlaylistById).includes(playlist.id))
+    : playlistsResult.data;
   const agendaOutputIdsByAgendaId = agendaOutputsResult.data;
+  const agendas = outputIdsForFilter
+    ? agendasResult.data.filter((agenda) =>
+        (agendaOutputIdsByAgendaId[agenda.id] ?? []).some((linkedOutputId) => outputIdsForFilter.has(linkedOutputId)),
+      )
+    : agendasResult.data;
   const categoryNameById = new Map(categoriesResult.data.map((category) => [category.id, category.name]));
 
   const eventsByAgendaId = new Map<string, BroadcastAgendaEventRecord[]>();
@@ -81,8 +105,6 @@ export async function exportBroadcastBundle(): Promise<ExportBroadcastBundleResu
     if (!itemsResult.success) return itemsResult;
     itemsByPlaylistId.set(playlist.id, itemsResult.data);
   }
-
-  const outputPlaylistById = await resolveOutputPlaylistIds(outputs);
 
   // ---- Mídia: coletada sob demanda conforme os passos abaixo referenciam algo, dedupe por
   // checksum (dois itens/agendas apontando pro mesmo arquivo não duplicam asset no pacote). ----

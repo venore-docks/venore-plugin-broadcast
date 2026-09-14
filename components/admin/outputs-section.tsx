@@ -7,6 +7,7 @@ import {
   Clock,
   Copy,
   CopyPlus,
+  Download,
   ExternalLink,
   EyeOff,
   KeyRound,
@@ -1813,6 +1814,21 @@ function OutputAccessTab({
           />
         )}
       </div>
+      {canManageAll && (
+        <div className="space-y-2 border-t border-border/60 pt-4">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Exportar</p>
+          <p className="text-xs text-muted-foreground">
+            Baixa um .zip só com esta tela (+ playlist, agenda vinculada e mídia referenciada) — pra duplicar a
+            configuração dela em outro ambiente (outro servidor/instalação do Venore Docks) via a aba Importar/Exportar de lá.
+          </p>
+          <Button asChild variant="outline" size="sm" className="w-full">
+            <a href={`/api/broadcast/export?outputId=${output.id}`}>
+              <Download className="size-4" aria-hidden="true" />
+              Exportar esta tela
+            </a>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
