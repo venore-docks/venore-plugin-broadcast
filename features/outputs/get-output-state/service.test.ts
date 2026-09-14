@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getMediaAsset = vi.fn();
 vi.mock("@venore/plugin-sdk/media", () => ({
@@ -503,5 +503,101 @@ describe("getOutputState", () => {
     expect(resolveBroadcastNews).not.toHaveBeenCalled();
     expect(findAllAgendas).not.toHaveBeenCalled();
     expect(findActiveAlert).not.toHaveBeenCalled();
+  });
+
+  // Roadmap item 12: cobre 2 saídas DE FATO sincronizando (não só sync:null). O cursor
+  // (runtime/sync-cursor.ts) é real aqui, não mockado — é exatamente o estado compartilhado entre
+  // saídas que este teste precisa exercitar de verdade.
+  describe("sync (reprodução sincronizada entre saídas que tocam a mesma playlist)", () => {
+    afterEach(() => {
+      delete (globalThis as { __broadcastSyncCursors?: unknown }).__broadcastSyncCursors;
+      vi.useRealTimers();
+    });
+
+    function mockSharedPlaylistSetup() {
+      findOutputByToken.mockImplementation(async (token: string) =>
+        token === "tok-a" ? { id: "o-a", drawerOpen: false, currentSceneId: "s1" } : { id: "o-b", drawerOpen: false, currentSceneId: "s1" },
+      );
+      findSceneById.mockResolvedValue({ id: "s1", name: "Principal" });
+      findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "video", config: { playlistId: "shared-playlist" } }]);
+      findVisiblePlaylistItemsByPlaylistId.mockResolvedValue([
+        {
+          id: "item-1",
+          order: 0,
+          sourceType: "local",
+          relativePath: "clips/a.mp4",
+          mediaAssetId: null,
+          url: null,
+          durationSeconds: null,
+          withAudio: false,
+        },
+        {
+          id: "item-2",
+          order: 1,
+          sourceType: "local",
+          relativePath: "clips/b.mp4",
+          mediaAssetId: null,
+          url: null,
+          durationSeconds: null,
+          withAudio: false,
+        },
+      ]);
+    }
+
+    it("duas saídas tocando a mesma playlist recebem o MESMO cursor de sync (playlistId/itemIndex/itemId/elapsedMs)", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      mockSharedPlaylistSetup();
+
+      const { getOutputState } = await import("./service");
+      const resultA = await getOutputState({ token: "tok-a" });
+      vi.advanceTimersByTime(2500); // a saída B pede o estado um pouco depois — mesmo cursor, elapsedMs maior
+      const resultB = await getOutputState({ token: "tok-b" });
+
+      expect(resultA.success && resultB.success).toBe(true);
+      if (!resultA.success || !resultB.success) return;
+
+      expect(resultA.data.sync).toEqual({ playlistId: "shared-playlist", itemIndex: 0, itemId: "item-1", elapsedMs: 0 });
+      // Mesmo item/índice da saída A — o cursor é da PLAYLIST, compartilhado entre as duas saídas
+      // que a tocam, não um estado por saída. elapsedMs maior porque B pediu 2,5s depois de A, mas
+      // o item começou no mesmo instante pras duas (mesmo startedAtMs no cursor compartilhado).
+      expect(resultB.data.sync).toEqual({ playlistId: "shared-playlist", itemIndex: 0, itemId: "item-1", elapsedMs: 2500 });
+    });
+
+    it("uma saída sem playlist compartilhada não é afetada pelo cursor de outra playlist", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      findOutputByToken.mockImplementation(async (token: string) =>
+        token === "tok-a"
+          ? { id: "o-a", drawerOpen: false, currentSceneId: "s1" }
+          : { id: "o-c", drawerOpen: false, currentSceneId: "s2" },
+      );
+      findSceneById.mockImplementation(async (id: string) => ({ id, name: id }));
+      findLayersBySceneId.mockImplementation(async (sceneId: string) => [
+        { id: "l1", type: "video", config: { playlistId: sceneId === "s1" ? "shared-playlist" : "solo-playlist" } },
+      ]);
+      findVisiblePlaylistItemsByPlaylistId.mockImplementation(async (playlistId: string) => [
+        {
+          id: playlistId === "shared-playlist" ? "item-1" : "item-x",
+          order: 0,
+          sourceType: "local",
+          relativePath: "clips/x.mp4",
+          mediaAssetId: null,
+          url: null,
+          durationSeconds: null,
+          withAudio: false,
+        },
+      ]);
+
+      const { getOutputState } = await import("./service");
+      const resultA = await getOutputState({ token: "tok-a" });
+      const resultC = await getOutputState({ token: "tok-c" });
+
+      expect(resultA.success && resultC.success).toBe(true);
+      if (!resultA.success || !resultC.success) return;
+      expect(resultA.data.sync?.playlistId).toBe("shared-playlist");
+      expect(resultC.data.sync?.playlistId).toBe("solo-playlist");
+      expect(resultA.data.sync?.itemId).not.toBe(resultC.data.sync?.itemId);
+    });
   });
 });

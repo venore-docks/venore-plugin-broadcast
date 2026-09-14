@@ -34,15 +34,42 @@ function getMap(): Map<string, SyncCursorEntry> {
   return g.__broadcastSyncCursors;
 }
 
-// Cursor atual de uma playlist. Se ainda não existe (ninguém começou a tocar), cria no item 0
-// começando agora — assim a 1ª TV a pedir o estado já ancora o grupo.
-export function ensureSyncCursor(playlistId: string, firstItemId: string): SyncCursorEntry {
+// Resolve o cursor válido pra playlist. Três casos: (1) ninguém começou a tocar ainda — cria no
+// item 0 começando agora, a 1ª TV a pedir o estado ancora o grupo; (2) o item atual ainda existe
+// — devolve o cursor, reindexado se a playlist foi reordenada (o item é o mesmo, só mudou de
+// posição, o relógio dele continua valendo); (3) o item atual SUMIU da playlist (removido/
+// ocultado em edição) — reancora na MESMA POSIÇÃO ORDINAL (clampada ao tamanho atual), não sempre
+// no item 0. Pedido do backlog: "cursor não deve resetar pro item 0 quando o item atual some da
+// playlist em edição... causa salto visível em todas as telas do grupo" — editar o FIM de uma
+// playlist de 20 itens enquanto o grupo toca o item 3 não deveria mandar todo mundo de volta pro
+// início. Só reinicia o relógio (startedAtMs = agora) nesse terceiro caso: o item em si mudou,
+// então o tempo decorrido do item antigo não significa nada pro novo.
+export function resolveSyncCursor(playlistId: string, orderedItemIds: string[]): SyncCursorEntry {
   const map = getMap();
   const existing = map.get(playlistId);
-  if (existing) return existing;
-  const created: SyncCursorEntry = { itemIndex: 0, itemId: firstItemId, startedAtMs: Date.now() };
-  map.set(playlistId, created);
-  return created;
+
+  if (!existing) {
+    const created: SyncCursorEntry = { itemIndex: 0, itemId: orderedItemIds[0], startedAtMs: Date.now() };
+    map.set(playlistId, created);
+    return created;
+  }
+
+  const currentPos = orderedItemIds.indexOf(existing.itemId);
+  if (currentPos !== -1) {
+    // Item ainda existe, mas pode ter mudado de POSIÇÃO (a playlist foi reordenada) — devolve o
+    // índice da ordem ATUAL, não o que foi gravado quando o cursor foi criado (senão o cliente
+    // mostraria o item errado pro índice). startedAtMs não muda: é o mesmo item ainda tocando, só
+    // a posição na lista mudou, o relógio dele continua valendo.
+    if (currentPos === existing.itemIndex) return existing;
+    const reindexed: SyncCursorEntry = { ...existing, itemIndex: currentPos };
+    map.set(playlistId, reindexed);
+    return reindexed;
+  }
+
+  const recoveredIndex = Math.min(existing.itemIndex, orderedItemIds.length - 1);
+  const recovered: SyncCursorEntry = { itemIndex: recoveredIndex, itemId: orderedItemIds[recoveredIndex], startedAtMs: Date.now() };
+  map.set(playlistId, recovered);
+  return recovered;
 }
 
 export function peekSyncCursor(playlistId: string): SyncCursorEntry | null {
@@ -60,13 +87,10 @@ export function advanceSyncCursor(playlistId: string, reportedItemId: string, or
   if (Date.now() - current.startedAtMs < ADVANCE_DEBOUNCE_MS) return false;
 
   const currentPos = orderedItemIds.indexOf(current.itemId);
-  const nextPos = currentPos === -1 ? 0 : (currentPos + 1) % orderedItemIds.length;
+  // currentPos === -1: o item que acabou de terminar foi removido da playlist enquanto tocava.
+  // Mesmo racional de resolveSyncCursor — avança a partir da MESMA posição ordinal que ele tinha
+  // (clampada), não sempre de volta pro item 0.
+  const nextPos = currentPos === -1 ? Math.min(current.itemIndex, orderedItemIds.length - 1) : (currentPos + 1) % orderedItemIds.length;
   map.set(playlistId, { itemIndex: nextPos, itemId: orderedItemIds[nextPos], startedAtMs: Date.now() });
   return true;
-}
-
-// Some com o cursor — chamado quando a playlist muda de itens (add/remove/reorder) ou quando o
-// grupo deixa de ser sincronizado, pra o próximo estado re-ancorar do zero.
-export function resetSyncCursor(playlistId: string): void {
-  getMap().delete(playlistId);
 }

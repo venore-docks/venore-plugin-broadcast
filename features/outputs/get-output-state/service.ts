@@ -15,7 +15,7 @@ import {
   type BroadcastAgendaAnimationStyle,
   type BroadcastAgendaViewSize,
 } from "../../../shared/settings";
-import { ensureSyncCursor, resetSyncCursor } from "../../../runtime/sync-cursor";
+import { resolveSyncCursor } from "../../../runtime/sync-cursor";
 import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
@@ -299,13 +299,15 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const syncItems = primaryPlaylistId ? (playlistItemsByPlaylistId[primaryPlaylistId] ?? []) : [];
   let sync: BroadcastOutputState["sync"] = null;
   if (primaryPlaylistId && syncItems.length > 0) {
-    const cursor = ensureSyncCursor(primaryPlaylistId, syncItems[0].id);
-    let position = syncItems.findIndex((item) => item.id === cursor.itemId);
-    const active = position === -1 ? (resetSyncCursor(primaryPlaylistId), ensureSyncCursor(primaryPlaylistId, syncItems[0].id)) : cursor;
-    if (position === -1) position = 0;
+    // resolveSyncCursor já trata o item atual sumir da playlist (editada em cima do grupo tocando)
+    // sem saltar pro item 0 — reancora na mesma posição ordinal, ver runtime/sync-cursor.ts.
+    const active = resolveSyncCursor(
+      primaryPlaylistId,
+      syncItems.map((item) => item.id),
+    );
     sync = {
       playlistId: primaryPlaylistId,
-      itemIndex: position,
+      itemIndex: active.itemIndex,
       itemId: active.itemId,
       elapsedMs: Math.max(0, Date.now() - active.startedAtMs),
     };
