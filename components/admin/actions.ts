@@ -17,6 +17,7 @@ import {
   clearTakeover,
   listContentChangeLog,
   listMyContentChanges,
+  listOfflineOutputs,
   listPendingContentChanges,
   rejectContentChange,
   createOutput,
@@ -71,6 +72,7 @@ import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastContentChangeRecord, BroadcastOutputRecord } from "../../contracts/types";
+import type { OfflineOutputInfo } from "../../index";
 import type { OutputBeaconSummary, PlaybackStat, VideosFolderHealth } from "../../index";
 
 // pending: true só nas 9 actions de conteúdo de playlist gateadas (features/content-changes) —
@@ -1227,6 +1229,15 @@ export async function getOutputTelemetryAction(): Promise<Record<string, OutputB
 
   const result = await listOutputTelemetry();
   return result.success ? result.data : {};
+}
+
+// Telas silenciosas há mais de OFFLINE_AFTER_MS (features/diagnostics/list-offline-outputs) —
+// consumida pelo OfflineOutputsWatcher (polling client-side, nunca e-mail). [] em qualquer erro.
+export async function getOfflineOutputsAction(): Promise<OfflineOutputInfo[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await listOfflineOutputs();
+  return result.success ? result.data : [];
 }
 
 // Sonda best-effort "este site carrega dentro de um iframe na TV?" — chamada pelo formulário de

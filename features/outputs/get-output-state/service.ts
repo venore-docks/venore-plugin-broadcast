@@ -2,7 +2,7 @@ import path from "node:path";
 import { getMediaAsset } from "@venore/plugin-sdk/media";
 import { getSetting } from "@venore/plugin-sdk/settings";
 import { getBrandConfig } from "@venore/plugin-sdk/brand";
-import { resolveRegionNews } from "../../../runtime/region-news";
+import { resolveBroadcastNews } from "../../../runtime/blog-news";
 import { resolveRegionWeather } from "../../../runtime/region-weather";
 import {
   DEFAULT_AGENDA_EVENT_SLIDE_DURATION_SECONDS,
@@ -363,7 +363,7 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const [regionWeather, regionNews, agendaRotation, activeAlert, brandLogoUrl, brandColor, agendaAnimationStyle, agendaViewSize] =
     await Promise.all([
       needsWeather ? resolveRegionWeather() : Promise.resolve(null),
-      needsNews ? resolveRegionNews() : Promise.resolve([]),
+      needsNews ? resolveBroadcastNews() : Promise.resolve([]),
       needsAgenda ? resolveAgendaRotation(output.id, timeZone) : Promise.resolve([]),
       needsAlert ? findActiveAlert({ id: output.id, groupName: output.groupName }) : Promise.resolve(null),
       needsBrandLogo ? getBrandConfig("png").then((brand) => brand.logoUrl) : Promise.resolve(null),

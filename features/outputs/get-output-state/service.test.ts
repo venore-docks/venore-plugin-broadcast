@@ -20,9 +20,9 @@ vi.mock("../../../runtime/region-weather", () => ({
   resolveRegionWeather: (...args: unknown[]) => resolveRegionWeather(...args),
 }));
 
-const resolveRegionNews = vi.fn();
-vi.mock("../../../runtime/region-news", () => ({
-  resolveRegionNews: (...args: unknown[]) => resolveRegionNews(...args),
+const resolveBroadcastNews = vi.fn();
+vi.mock("../../../runtime/blog-news", () => ({
+  resolveBroadcastNews: (...args: unknown[]) => resolveBroadcastNews(...args),
 }));
 
 const findOutputByToken = vi.fn();
@@ -56,7 +56,7 @@ describe("getOutputState", () => {
     getSetting.mockReset();
     getBrandConfig.mockReset();
     resolveRegionWeather.mockReset();
-    resolveRegionNews.mockReset();
+    resolveBroadcastNews.mockReset();
     findOutputByToken.mockReset();
     findSceneById.mockReset();
     findLayersBySceneId.mockReset();
@@ -143,7 +143,7 @@ describe("getOutputState", () => {
     });
     expect(findSceneById).not.toHaveBeenCalled();
     expect(resolveRegionWeather).not.toHaveBeenCalled();
-    expect(resolveRegionNews).not.toHaveBeenCalled();
+    expect(resolveBroadcastNews).not.toHaveBeenCalled();
     expect(findAllAgendas).not.toHaveBeenCalled();
     expect(findActiveAlert).not.toHaveBeenCalled();
     expect(getBrandConfig).not.toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe("getOutputState", () => {
       { id: "item-1", order: 0, sourceType: "webpage", relativePath: null, mediaAssetId: null, url: "/cursos", durationSeconds: null, withAudio: true },
       { id: "item-2", order: 1, sourceType: "news", relativePath: null, mediaAssetId: null, url: null, durationSeconds: null, withAudio: false },
     ]);
-    resolveRegionNews.mockResolvedValue([]);
+    resolveBroadcastNews.mockResolvedValue([]);
 
     const { getOutputState } = await import("./service");
     const result = await getOutputState({ token: "tok-1" });
@@ -205,12 +205,12 @@ describe("getOutputState", () => {
     findVisiblePlaylistItemsByPlaylistId.mockResolvedValue([
       { id: "item-1", order: 0, sourceType: "news", relativePath: null, mediaAssetId: null, url: null, durationSeconds: null },
     ]);
-    resolveRegionNews.mockResolvedValue([{ title: "Notícia", description: null, link: "https://example.com", imageUrl: null, sourceName: null }]);
+    resolveBroadcastNews.mockResolvedValue([{ title: "Notícia", description: null, link: "https://example.com", imageUrl: null, sourceName: null }]);
 
     const { getOutputState } = await import("./service");
     const result = await getOutputState({ token: "tok-1" });
 
-    expect(resolveRegionNews).toHaveBeenCalledTimes(1);
+    expect(resolveBroadcastNews).toHaveBeenCalledTimes(1);
     expect(result.success && result.data.regionNews).toHaveLength(1);
   });
 
@@ -500,7 +500,7 @@ describe("getOutputState", () => {
     await getOutputState({ token: "tok-1" });
 
     expect(resolveRegionWeather).not.toHaveBeenCalled();
-    expect(resolveRegionNews).not.toHaveBeenCalled();
+    expect(resolveBroadcastNews).not.toHaveBeenCalled();
     expect(findAllAgendas).not.toHaveBeenCalled();
     expect(findActiveAlert).not.toHaveBeenCalled();
   });

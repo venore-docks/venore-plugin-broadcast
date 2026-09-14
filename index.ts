@@ -421,6 +421,17 @@ export type {
 } from "./features/diagnostics/report-agent-diagnostics/types";
 export type { GetOutputDiagnosticsResult } from "./features/diagnostics/get-output-diagnostics/types";
 export type { ListDiagnosticEventsResult } from "./features/diagnostics/list-diagnostic-events/types";
+// Notificação in-app de tela offline (v1.9.1, roadmap item 4) — "caiu" = heartbeat do browser da
+// TV (output-canvas.tsx) silencioso por mais de OFFLINE_AFTER_MS. Consumido por um watcher
+// client-side que faz polling (components/admin/offline-outputs-watcher.tsx), nunca e-mail
+// (pedido explícito do usuário).
+export {
+  listOfflineOutputsHandler as listOfflineOutputs,
+} from "./features/diagnostics/list-offline-outputs/handler";
+export type {
+  ListOfflineOutputsResult,
+  OfflineOutputInfo,
+} from "./features/diagnostics/list-offline-outputs/types";
 export type {
   BroadcastAgentDiagnosticsSnapshot,
   BroadcastBrowserDiagnosticsSnapshot,

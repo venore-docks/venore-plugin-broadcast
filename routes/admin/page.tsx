@@ -58,6 +58,7 @@ import { ResponsiblesSection } from "../../components/admin/responsibles-section
 import { ImportExportSection } from "../../components/admin/import-export-section";
 import { DashboardSection } from "../../components/admin/dashboard-section";
 import { OnboardingChecklist } from "../../components/admin/onboarding-checklist";
+import { OfflineOutputsWatcher } from "../../components/admin/offline-outputs-watcher";
 
 // Único ponto de entrada do plugin no admin (pedido explícito: "não separe os links na navegação
 // admin") — chegou a existir uma rota satélite por permission (/admin/broadcast/agenda,
@@ -442,6 +443,8 @@ export default async function BroadcastAdminPage() {
           ) : undefined
         }
       />
+
+      {hasOutputsAccess && <OfflineOutputsWatcher />}
 
       {hasFullAccess && (!hasScreen || !hasContent) && <OnboardingChecklist hasScreen={hasScreen} hasContent={hasContent} />}
 
