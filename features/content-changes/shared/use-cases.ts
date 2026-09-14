@@ -13,6 +13,7 @@ export const CONTENT_CHANGE_USE_CASES = {
   addAgendaEventPlaylistItem: "broadcast.add-agenda-event-playlist-item",
   addMetricsBoardPlaylistItem: "broadcast.add-metrics-board-playlist-item",
   addScannedPlaylistItems: "broadcast.add-scanned-playlist-items",
+  uploadLocalVideo: "broadcast.upload-local-video",
   publishAlert: "broadcast.publish-alert",
   publishTakeover: "broadcast.publish-takeover",
 } as const;

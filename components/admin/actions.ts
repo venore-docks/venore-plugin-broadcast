@@ -19,6 +19,7 @@ import {
   listMyContentChanges,
   listOfflineOutputs,
   listPendingContentChanges,
+  rebaselineLocalItemIntegrity,
   rejectContentChange,
   createOutput,
   createPlaylist,
@@ -65,6 +66,7 @@ import {
   updateAgenda,
   updateAgendaEvent,
   updatePlaylistItem,
+  verifyLocalItemsIntegrity,
   BROADCAST_SETTINGS,
 } from "../../index";
 import { getSetting, setSetting } from "@venore/plugin-sdk/settings";
@@ -72,7 +74,7 @@ import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastContentChangeRecord, BroadcastOutputRecord } from "../../contracts/types";
-import type { OfflineOutputInfo } from "../../index";
+import type { LocalItemIntegrityIssue, OfflineOutputInfo } from "../../index";
 import type { OutputBeaconSummary, PlaybackStat, VideosFolderHealth } from "../../index";
 
 // pending: true só nas 9 actions de conteúdo de playlist gateadas (features/content-changes) —
@@ -1314,5 +1316,27 @@ export async function cancelContentChangeAction(
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);
+  return { error: null };
+}
+
+// Integridade de arquivo local (v1.9.2) — verifyLocalItemsIntegrityAction é chamada sob demanda
+// (botão, não getter de carregamento de página: hashear é caro). [] em qualquer erro/plugin
+// desativado, igual aos outros get*Action.
+export async function verifyLocalItemsIntegrityAction(): Promise<LocalItemIntegrityIssue[]> {
+  if (!(await isPluginActive("broadcast"))) return [];
+
+  const result = await verifyLocalItemsIntegrity();
+  return result.success ? result.data : [];
+}
+
+export async function rebaselineLocalItemIntegrityAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await rebaselineLocalItemIntegrity({ itemId: requireString(formData, "itemId") });
+  if (!result.success) return { error: result.error.message };
+
   return { error: null };
 }

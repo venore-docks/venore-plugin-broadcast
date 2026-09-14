@@ -1,5 +1,19 @@
 import { sql } from "drizzle-orm";
-import { type AnyPgColumn, boolean, check, index, integer, jsonb, pgSchema, primaryKey, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  bigint,
+  boolean,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgSchema,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const broadcastSchema = pgSchema("broadcast");
 
@@ -102,6 +116,18 @@ export const broadcastPlaylistItems = broadcastSchema.table(
     // ao evento que ele mostra).
     agendaEventId: text("agenda_event_id").references(() => broadcastAgendaEvents.id, { onDelete: "cascade" }),
     durationSeconds: real("duration_seconds"),
+    // Integridade de arquivo (v1.9.2) — só preenchido pra sourceType "local" (o único cujo
+    // conteúdo é um arquivo neste disco, fora do controle de versão de qualquer coisa). Gravado no
+    // momento em que o item é de fato criado (seja na hora, por broadcast.manage, seja na
+    // aprovação de uma proposta pendente — ver features/content-changes) a partir do arquivo REAL
+    // em disco naquele momento, não do que o cliente mandou. Pedido explícito do usuário: "o
+    // sistema guarda o tamanho em físico e o... vídeo. Isso é para evitar que alguém substitua um
+    // vídeo na pasta (renomeando por outro já aprovado)". sha256 sozinho já é garantia forte contra
+    // substituição (qualquer byte diferente muda o hash inteiro); fileSizeBytes é um checksum
+    // barato a mais, útil como primeiro sinal antes de reler o arquivo inteiro pra hashear de novo
+    // na verificação (features/playlists/verify-local-items-integrity).
+    fileSizeBytes: bigint("file_size_bytes", { mode: "number" }),
+    fileSha256: text("file_sha256"),
     hidden: boolean("hidden").notNull().default(false),
     // Só tem efeito em item de vídeo (local/media-asset que resolve pra vídeo) e "webpage": quando
     // false (default), o <video> da view sai `muted` (exigência de autoplay do navegador) e o
@@ -129,7 +155,7 @@ export const broadcastPlaylistItems = broadcastSchema.table(
     // Exatamente um de relativePath/mediaAssetId/url/agendaEventId preenchido, de acordo com
     // sourceType — impede linha ambígua ou órfã direto no banco. "news" não referencia arquivo/URL
     // nenhum: é um marcador de posição no rodízio da playlist, os artigos vêm de
-    // runtime/region-news.ts (mesma fonte da layer "news" standalone) — durationSeconds aqui é o
+    // runtime/blog-news.ts (mesma fonte da layer "news" standalone) — durationSeconds aqui é o
     // teto do bloco inteiro (todas as manchetes juntas), não por manchete. "agenda-event" referencia
     // um único evento (agendaEventId) — pedido explícito: "não quero que entre a agenda, apenas um
     // item da agenda, com todas as informações".

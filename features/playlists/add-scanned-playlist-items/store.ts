@@ -19,7 +19,14 @@ export async function findMaxPlaylistItemOrder(playlistId: string): Promise<numb
 }
 
 export async function insertLocalPlaylistItems(
-  items: { playlistId: string; order: number; title: string | null; relativePath: string }[],
+  items: {
+    playlistId: string;
+    order: number;
+    title: string | null;
+    relativePath: string;
+    fileSizeBytes: number;
+    fileSha256: string;
+  }[],
 ): Promise<BroadcastPlaylistItemRecord[]> {
   if (items.length === 0) return [];
   const rows = await db

@@ -18,6 +18,11 @@ vi.mock("node:fs/promises", () => ({
   stat: (...args: unknown[]) => stat(...args),
 }));
 
+const computeFileSha256 = vi.fn();
+vi.mock("../../../shared/file-integrity", () => ({
+  computeFileSha256: (...args: unknown[]) => computeFileSha256(...args),
+}));
+
 const findPlaylistById = vi.fn();
 const findMaxPlaylistItemOrder = vi.fn();
 const insertLocalPlaylistItems = vi.fn();
@@ -34,6 +39,8 @@ const ROOT = path.resolve(BROADCAST_ROOT_FOLDER);
 describe("addScannedPlaylistItems", () => {
   beforeEach(() => {
     stat.mockReset();
+    computeFileSha256.mockReset();
+    computeFileSha256.mockResolvedValue("deadbeef");
     findPlaylistById.mockReset();
     findMaxPlaylistItemOrder.mockReset();
     insertLocalPlaylistItems.mockReset();
@@ -50,11 +57,11 @@ describe("addScannedPlaylistItems", () => {
     expect(insertLocalPlaylistItems).not.toHaveBeenCalled();
   });
 
-  it("only inserts paths that are within the playlist's folder, have a video extension, and still exist on disk", async () => {
+  it("only inserts paths that are within the playlist's folder, have a video extension, and still exist on disk — hashing each valid file", async () => {
     findPlaylistById.mockResolvedValue({ id: "p1", folderPath: "clips" });
     findMaxPlaylistItemOrder.mockResolvedValue(0);
     stat.mockImplementation(async (target: string) => {
-      if (target === path.join(ROOT, "clips", "intro.mp4")) return { isFile: () => true };
+      if (target === path.join(ROOT, "clips", "intro.mp4")) return { isFile: () => true, size: 12345 };
       throw new Error("ENOENT");
     });
     insertLocalPlaylistItems.mockResolvedValue([{ id: "item-1", relativePath: "clips/intro.mp4" }]);
@@ -73,8 +80,10 @@ describe("addScannedPlaylistItems", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(computeFileSha256).toHaveBeenCalledTimes(1);
+    expect(computeFileSha256).toHaveBeenCalledWith(path.join(ROOT, "clips", "intro.mp4"));
     expect(insertLocalPlaylistItems).toHaveBeenCalledWith([
-      { playlistId: "p1", order: 1, title: null, relativePath: "clips/intro.mp4" },
+      { playlistId: "p1", order: 1, title: null, relativePath: "clips/intro.mp4", fileSizeBytes: 12345, fileSha256: "deadbeef" },
     ]);
   });
 
@@ -82,7 +91,7 @@ describe("addScannedPlaylistItems", () => {
     findPlaylistById.mockResolvedValue({ id: "p1", folderPath: "clips/" });
     findMaxPlaylistItemOrder.mockResolvedValue(0);
     stat.mockImplementation(async (target: string) => {
-      if (target === path.join(ROOT, "clips", "intro.mp4")) return { isFile: () => true };
+      if (target === path.join(ROOT, "clips", "intro.mp4")) return { isFile: () => true, size: 100 };
       throw new Error("ENOENT");
     });
     insertLocalPlaylistItems.mockResolvedValue([{ id: "item-1", relativePath: "clips/intro.mp4" }]);
@@ -92,7 +101,7 @@ describe("addScannedPlaylistItems", () => {
 
     expect(result.success).toBe(true);
     expect(insertLocalPlaylistItems).toHaveBeenCalledWith([
-      { playlistId: "p1", order: 1, title: null, relativePath: "clips/intro.mp4" },
+      { playlistId: "p1", order: 1, title: null, relativePath: "clips/intro.mp4", fileSizeBytes: 100, fileSha256: "deadbeef" },
     ]);
   });
 
@@ -106,6 +115,7 @@ describe("addScannedPlaylistItems", () => {
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error.code).toBe("broadcast.add-scanned-playlist-items.no_valid_items");
     expect(insertLocalPlaylistItems).not.toHaveBeenCalled();
+    expect(computeFileSha256).not.toHaveBeenCalled();
   });
 
   // kind="image" nunca lê playlist.folderPath — usa BROADCAST_IMAGES_FOLDER_PATH direto, mesmo
@@ -114,7 +124,7 @@ describe("addScannedPlaylistItems", () => {
     findPlaylistById.mockResolvedValue({ id: "p1", folderPath: "videos" });
     findMaxPlaylistItemOrder.mockResolvedValue(0);
     stat.mockImplementation(async (target: string) => {
-      if (target === path.join(ROOT, "images", "banner.png")) return { isFile: () => true };
+      if (target === path.join(ROOT, "images", "banner.png")) return { isFile: () => true, size: 777 };
       throw new Error("ENOENT");
     });
     insertLocalPlaylistItems.mockResolvedValue([{ id: "item-1", relativePath: "images/banner.png" }]);
@@ -133,7 +143,7 @@ describe("addScannedPlaylistItems", () => {
 
     expect(result.success).toBe(true);
     expect(insertLocalPlaylistItems).toHaveBeenCalledWith([
-      { playlistId: "p1", order: 1, title: null, relativePath: "images/banner.png" },
+      { playlistId: "p1", order: 1, title: null, relativePath: "images/banner.png", fileSizeBytes: 777, fileSha256: "deadbeef" },
     ]);
   });
 });

@@ -1,5 +1,7 @@
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { beginOperation, endOperation } from "@venore/plugin-sdk/observability";
+import { computeFileSha256 } from "../../../shared/file-integrity";
 import { BROADCAST_ROOT_FOLDER } from "../../../shared/settings";
 import { normalizePlaylistFolderPath, resolveWithinRoot } from "../../../shared/sandboxed-path";
 import { isVideoExtension } from "../../../shared/video-extensions";
@@ -32,6 +34,30 @@ export async function uploadLocalVideo(command: UploadLocalVideoCommand): Promis
     };
   }
 
+  // Hasheado aqui (mesmo racional de add-scanned-playlist-items/service.ts) — este É o momento em
+  // que o item de fato é publicado, seja na hora ou na aprovação de uma pendência (ver features/
+  // content-changes). Reconfere que o arquivo ainda existe: se a aprovação demorou e alguém apagou
+  // o arquivo nesse meio-tempo, falha aqui em vez de criar um item apontando pro nada.
+  const absolutePath = resolveWithinRoot(BROADCAST_ROOT_FOLDER, command.relativePath);
+  if (!absolutePath) {
+    return {
+      success: false,
+      error: { code: "broadcast.upload-local-video.invalid_path", message: "O arquivo enviado é inválido." },
+    };
+  }
+  let fileSizeBytes: number;
+  let fileSha256: string;
+  try {
+    const info = await stat(absolutePath);
+    fileSizeBytes = info.size;
+    fileSha256 = await computeFileSha256(absolutePath);
+  } catch {
+    return {
+      success: false,
+      error: { code: "broadcast.upload-local-video.file_missing", message: "O arquivo enviado não está mais no servidor." },
+    };
+  }
+
   const handle = beginOperation({
     useCase: "broadcast.upload-local-video",
     actor: { id: command.actorId, type: "user" },
@@ -44,6 +70,8 @@ export async function uploadLocalVideo(command: UploadLocalVideoCommand): Promis
     order,
     title: command.title,
     relativePath: command.relativePath,
+    fileSizeBytes,
+    fileSha256,
   });
 
   endOperation(handle, { success: true });

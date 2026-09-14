@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Clapperboard,
   CalendarDays,
@@ -60,13 +61,16 @@ import {
   listMetricsBoardOptionsAction,
   deletePlaylistAction,
   deletePlaylistItemAction,
+  rebaselineLocalItemIntegrityAction,
   reorderPlaylistItemsAction,
   scanPlaylistFolderAction,
   togglePlaylistItemVisibilityAction,
   updatePlaylistItemAction,
+  verifyLocalItemsIntegrityAction,
   type BroadcastActionState,
   type ScanPlaylistFolderState,
 } from "./actions";
+import type { LocalItemIntegrityIssue } from "../../index";
 
 const initialState: BroadcastActionState = { error: null };
 const initialScanState: ScanPlaylistFolderState = { error: null, toAdd: [], toRemove: [] };
@@ -224,6 +228,85 @@ export function PlaybackReportPanel() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// "Aceitar o arquivo atual" pra um item flagado — depois de um admin confirmar que a mudança era
+// legítima (ex: substituiu por uma versão corrigida de propósito). Regrava o hash/tamanho de
+// referência, tira o item da lista de suspeitos na PRÓXIMA verificação (não recarrega a lista
+// sozinho — onAccepted deixa o pai tirar da lista local na hora).
+function AcceptCurrentFileButton({ itemId, onAccepted }: { itemId: string; onAccepted: () => void }) {
+  const [state, formAction, pending] = useActionState(rebaselineLocalItemIntegrityAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Arquivo atual aceito como referência.", onSuccess: onAccepted });
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="itemId" value={itemId} />
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>
+        Aceitar arquivo atual
+      </Button>
+    </form>
+  );
+}
+
+// Verificação de integridade sob demanda (v1.9.2) — pedido explícito do usuário: "o sistema guarda
+// o tamanho... e... isso é pra evitar que alguém substitua um vídeo na pasta (renomeando por
+// outro já aprovado)". Nunca automática (hashear todo vídeo/imagem local é caro) — só broadcast.
+// manage vê isto (mesmo gate do handler).
+function LocalItemsIntegrityPanel() {
+  const [issues, setIssues] = useState<LocalItemIntegrityIssue[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function runCheck() {
+    setLoading(true);
+    const result = await verifyLocalItemsIntegrityAction();
+    setIssues(result);
+    setLoading(false);
+  }
+
+  return (
+    <details className="rounded-panel border border-border bg-card p-3">
+      <summary className="cursor-pointer text-sm font-medium text-foreground">Integridade dos arquivos locais</summary>
+      <div className="mt-3 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Compara cada vídeo/imagem local com o tamanho e o hash gravados quando foi adicionado — detecta se alguém trocou o
+          arquivo na pasta por outro com o mesmo nome. Pode demorar alguns segundos (lê os arquivos inteiros).
+        </p>
+        <Button type="button" size="sm" variant="outline" onClick={runCheck} disabled={loading}>
+          {loading ? "Verificando…" : "Verificar agora"}
+        </Button>
+        {issues !== null && issues.length === 0 && (
+          <p className="text-xs text-success">Nenhuma divergência — todos os arquivos batem com o que foi aprovado.</p>
+        )}
+        {issues !== null && issues.length > 0 && (
+          <div className="space-y-1.5">
+            {issues.map((issue) => (
+              <div key={issue.itemId} className="space-y-1 rounded-panel border border-warning-border bg-warning-soft p-2 text-sm">
+                <p className="font-medium text-warning">
+                  {issue.status === "missing" ? "Arquivo sumiu" : "Arquivo mudou"}: {issue.title ?? issue.relativePath}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {issue.playlistName} · {issue.relativePath}
+                  {issue.status === "mismatch" && (
+                    <>
+                      {" "}
+                      · era {issue.recordedSizeBytes.toLocaleString("pt-BR")} bytes, agora {issue.currentSizeBytes?.toLocaleString("pt-BR")}{" "}
+                      bytes
+                    </>
+                  )}
+                </p>
+                {issue.status === "mismatch" && (
+                  <AcceptCurrentFileButton
+                    itemId={issue.itemId}
+                    onAccepted={() => setIssues((prev) => (prev ? prev.filter((entry) => entry.itemId !== issue.itemId) : prev))}
+                  />
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -908,6 +991,14 @@ function UploadVideoForm({ playlistId, onAdded }: { playlistId: string; onAdded?
       setProgress(null);
       if (inputRef.current) inputRef.current.value = "";
       if (xhr.status >= 200 && xhr.status < 300) {
+        // Gateado (v1.9.2): 202 = enfileirado, o arquivo já está no disco mas o item de playlist
+        // só existe depois da aprovação — sem isso, um operador escopado via upload contornava a
+        // fila que já existe pra "Escanear pasta".
+        if (xhr.status === 202) {
+          toast.warning("Enviado para aprovação.");
+        } else {
+          toast.success("Vídeo adicionado.");
+        }
         router.refresh();
         onAdded?.();
         return;
@@ -1438,6 +1529,7 @@ export function PlaylistsSection({
   return (
     <div className="space-y-4">
       <VideosFolderHealthBadge />
+      {canManageAll && <LocalItemsIntegrityPanel />}
       {canManageAll && <CreatePlaylistForm />}
       {playlists.length === 0 && (
         <p className="text-sm text-muted-foreground">

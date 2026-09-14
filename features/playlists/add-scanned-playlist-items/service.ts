@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { beginOperation, endOperation } from "@venore/plugin-sdk/observability";
+import { computeFileSha256 } from "../../../shared/file-integrity";
 import { BROADCAST_IMAGES_FOLDER_PATH, BROADCAST_ROOT_FOLDER } from "../../../shared/settings";
 import { normalizePlaylistFolderPath, resolveWithinRoot } from "../../../shared/sandboxed-path";
 import { isImageExtension, isVideoExtension } from "../../../shared/video-extensions";
@@ -31,7 +32,12 @@ export async function addScannedPlaylistItems(command: AddScannedPlaylistItemsCo
   // precisar de migração manual.
   const normalizedFolderPath = normalizePlaylistFolderPath(folderPath);
   const matchesExtension = command.kind === "video" ? isVideoExtension : isImageExtension;
-  const validRelativePaths: string[] = [];
+  // Hasheado aqui (não só validado com stat()) — este É o momento "de aprovação" pro item: quando
+  // isto roda de verdade, seja na hora (broadcast.manage) ou na aprovação de uma pendência (ver
+  // features/content-changes), o hash grava o QUE FOI PUBLICADO, contra o qual a verificação
+  // periódica (verify-local-items-integrity) compara depois. Sequencial de propósito — ler vários
+  // vídeos grandes em paralelo compete por I/O sem ganho real.
+  const validItems: { relativePath: string; fileSizeBytes: number; fileSha256: string }[] = [];
   for (const relativePath of command.relativePaths) {
     const withinTargetFolder = relativePath === normalizedFolderPath || relativePath.startsWith(`${normalizedFolderPath}/`);
     if (!withinTargetFolder || !matchesExtension(path.extname(relativePath))) continue;
@@ -41,13 +47,15 @@ export async function addScannedPlaylistItems(command: AddScannedPlaylistItemsCo
 
     try {
       const info = await stat(absolutePath);
-      if (info.isFile()) validRelativePaths.push(relativePath);
+      if (!info.isFile()) continue;
+      const fileSha256 = await computeFileSha256(absolutePath);
+      validItems.push({ relativePath, fileSizeBytes: info.size, fileSha256 });
     } catch {
       // Arquivo sumiu entre o scan e a confirmação — ignora esse item, não falha a operação inteira.
     }
   }
 
-  if (validRelativePaths.length === 0) {
+  if (validItems.length === 0) {
     return {
       success: false,
       error: {
@@ -65,11 +73,13 @@ export async function addScannedPlaylistItems(command: AddScannedPlaylistItemsCo
 
   let nextOrder = (await findMaxPlaylistItemOrder(command.playlistId)) + 1;
   const items = await insertLocalPlaylistItems(
-    validRelativePaths.map((relativePath) => ({
+    validItems.map((item) => ({
       playlistId: command.playlistId,
       order: nextOrder++,
       title: null,
-      relativePath,
+      relativePath: item.relativePath,
+      fileSizeBytes: item.fileSizeBytes,
+      fileSha256: item.fileSha256,
     })),
   );
 

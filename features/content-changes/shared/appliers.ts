@@ -9,6 +9,7 @@ import { addNewsPlaylistItem } from "../../playlists/add-news-playlist-item/serv
 import { addAgendaEventPlaylistItem } from "../../playlists/add-agenda-event-playlist-item/service";
 import { addMetricsBoardPlaylistItem } from "../../playlists/add-metrics-board-playlist-item/service";
 import { addScannedPlaylistItems } from "../../playlists/add-scanned-playlist-items/service";
+import { uploadLocalVideo } from "../../playlists/upload-local-video/service";
 import { publishAlert } from "../../alerts/publish-alert/service";
 import { publishTakeover } from "../../takeover/publish-takeover/service";
 import { CONTENT_CHANGE_USE_CASES } from "./use-cases";
@@ -35,6 +36,7 @@ export const CONTENT_CHANGE_APPLIERS: Record<string, ContentChangeApplier> = {
   [CONTENT_CHANGE_USE_CASES.addAgendaEventPlaylistItem]: addAgendaEventPlaylistItem,
   [CONTENT_CHANGE_USE_CASES.addMetricsBoardPlaylistItem]: addMetricsBoardPlaylistItem,
   [CONTENT_CHANGE_USE_CASES.addScannedPlaylistItems]: addScannedPlaylistItems,
+  [CONTENT_CHANGE_USE_CASES.uploadLocalVideo]: uploadLocalVideo,
   [CONTENT_CHANGE_USE_CASES.publishAlert]: publishAlert,
   [CONTENT_CHANGE_USE_CASES.publishTakeover]: publishTakeover,
 };

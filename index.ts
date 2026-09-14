@@ -118,6 +118,22 @@ export type {
 // runtime/upload-storage). Gate: broadcast.manage OU broadcast.playlists.manage + atribuição.
 export { uploadLocalVideoHandler as uploadLocalVideo } from "./features/playlists/upload-local-video/handler";
 export type { UploadLocalVideoInput, UploadLocalVideoResult } from "./features/playlists/upload-local-video/types";
+// Integridade de arquivo local (v1.9.2) — verificação sob demanda (nunca automática, hashear é
+// caro) + "aceitar arquivo atual" pra destravar um falso positivo depois de uma troca legítima.
+export {
+  verifyLocalItemsIntegrityHandler as verifyLocalItemsIntegrity,
+} from "./features/playlists/verify-local-items-integrity/handler";
+export type {
+  LocalItemIntegrityIssue,
+  VerifyLocalItemsIntegrityResult,
+} from "./features/playlists/verify-local-items-integrity/types";
+export {
+  rebaselineLocalItemIntegrityHandler as rebaselineLocalItemIntegrity,
+} from "./features/playlists/rebaseline-local-item-integrity/handler";
+export type {
+  RebaselineLocalItemIntegrityInput,
+  RebaselineLocalItemIntegrityResult,
+} from "./features/playlists/rebaseline-local-item-integrity/types";
 export {
   togglePlaylistItemVisibilityHandler as togglePlaylistItemVisibility,
 } from "./features/playlists/toggle-playlist-item-visibility/handler";

@@ -45,6 +45,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const result = await uploadLocalVideo({ playlistId, relativePath: saved.relativePath, title });
+  if (result.pending) {
+    // Gateado (v1.9.2): quem só tem broadcast.playlists.manage fica pendente até um broadcast.
+    // manage aprovar — o arquivo FICA no disco (a proposta é só o registro como item de playlist,
+    // igual a um candidato de "Escanear pasta" ainda não confirmado), não desfaz nada aqui.
+    return NextResponse.json({ pending: true, changeId: result.changeId }, { status: 202 });
+  }
   if (!result.success) {
     // Acesso negado / playlist inválida DEPOIS de gravar — desfaz o arquivo pra não deixar lixo no
     // compartilhamento.

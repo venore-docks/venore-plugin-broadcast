@@ -23,6 +23,8 @@ export async function insertLocalPlaylistItem(input: {
   order: number;
   title: string | null;
   relativePath: string;
+  fileSizeBytes: number;
+  fileSha256: string;
 }): Promise<BroadcastPlaylistItemRecord> {
   const [row] = await db
     .insert(broadcastPlaylistItems)

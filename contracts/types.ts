@@ -84,6 +84,10 @@ export type BroadcastPlaylistItemRecord = {
   // plugin, referência real permitida, diferente de mediaAssetId acima que é de outro context).
   agendaEventId: string | null;
   durationSeconds: number | null;
+  // Integridade de arquivo (v1.9.2) — só preenchido pra sourceType "local". Ver o comentário da
+  // coluna em database/schema/index.ts e features/playlists/verify-local-items-integrity.
+  fileSizeBytes: number | null;
+  fileSha256: string | null;
   hidden: boolean;
   // Só relevante pra item de vídeo e "webpage" — toca o áudio na view em vez de sair mudo. Ver
   // o comentário da coluna with_audio em database/schema/index.ts.
