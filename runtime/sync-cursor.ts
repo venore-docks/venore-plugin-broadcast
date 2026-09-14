@@ -76,6 +76,19 @@ export function peekSyncCursor(playlistId: string): SyncCursorEntry | null {
   return getMap().get(playlistId) ?? null;
 }
 
+// Snapshot de TODOS os cursores ativos agora — backlog item 3 ("indicador de drift de
+// sincronização no admin"): o admin cruza isto com o `nowPlayingItemId` que cada TV já reporta via
+// beacon (runtime/output-beacon.ts) pra mostrar "essa tela está mostrando um item diferente do que
+// o grupo deveria". Cópia plana (não a Map/globalThis em si) — quem lê não deve conseguir mutar o
+// estado real por engano.
+export function peekAllSyncCursors(): Record<string, { itemId: string; itemIndex: number }> {
+  const result: Record<string, { itemId: string; itemIndex: number }> = {};
+  for (const [playlistId, entry] of getMap()) {
+    result[playlistId] = { itemId: entry.itemId, itemIndex: entry.itemIndex };
+  }
+  return result;
+}
+
 // Avança o cursor se `reportedItemId` é de fato o item atual e passou da janela de debounce.
 // Devolve true quando avançou (o chamador então empurra o evento SSE), false quando ignorou.
 export function advanceSyncCursor(playlistId: string, reportedItemId: string, orderedItemIds: string[]): boolean {

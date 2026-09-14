@@ -55,6 +55,7 @@ import type {
   BroadcastPlaylistScheduleSlot,
 } from "../../contracts/types";
 import type { OutputBeaconSummary } from "../../runtime/output-beacon";
+import type { SyncCursorSnapshot } from "../../index";
 import { DAY_LABELS, minutesToTimeLabel, parseTimeToMinutes } from "../../shared/playlist-schedule";
 import { StatusBadge, StatusDot } from "./status-dot";
 import { outputItemStatus } from "./status";
@@ -70,6 +71,7 @@ import {
   getConnectedOutputIpsAction,
   getOutputPinBlocksAction,
   getOutputTelemetryAction,
+  getSyncCursorsAction,
   reloadOutputAction,
   resetOutputPinAttemptsAction,
   rotateOutputTokenAction,
@@ -925,18 +927,49 @@ function GroupBulkButton({ groupName, action, label }: { groupName: string; acti
   );
 }
 
+// Indicador de drift (backlog item 3) — cruza o cursor de verdade do servidor (fonte da ordem que
+// as TVs devem seguir) com o nowPlayingItemId que cada TV já reporta via beacon a cada ~30s. Não
+// é medição de tempo fino (o beacon não é frequente o bastante pra isso) — é "essa tela está
+// mostrando um item DIFERENTE do que o grupo deveria", o sinal que importa pra notar uma TV
+// travada/atrasada.
+function computeGroupDrift(
+  groupOutputs: BroadcastOutputRecord[],
+  playlistId: string,
+  syncCursorsByPlaylistId: SyncCursorSnapshot,
+  telemetryByToken: Record<string, OutputBeaconSummary[]>,
+): { outputName: string; nowPlayingItemId: string | null }[] {
+  const cursor = syncCursorsByPlaylistId[playlistId];
+  if (!cursor) return [];
+
+  const mismatched: { outputName: string; nowPlayingItemId: string | null }[] = [];
+  for (const output of groupOutputs) {
+    const beacons = telemetryByToken[output.token] ?? [];
+    // Várias abas/conexões podem reportar pro mesmo token (ex: preview aberto no admin) — basta
+    // UMA delas bater com o cursor pra considerar a tela em dia.
+    if (beacons.length === 0) continue; // sem beacon ainda = sem dado, não é "fora de sincronia"
+    const inSync = beacons.some((beacon) => beacon.nowPlayingItemId === cursor.itemId);
+    if (!inSync) mismatched.push({ outputName: output.name, nowPlayingItemId: beacons[0]?.nowPlayingItemId ?? null });
+  }
+  return mismatched;
+}
+
 // Painel de grupos — sem toggle de sincronização: desde v1.8.4 a reprodução sincronizada é sempre
 // automática pra qualquer conjunto de telas (agrupadas ou não) que tocam a MESMA playlist. Grupo
 // aqui só dá organização (nome) + ações em lote.
 function GroupsPanel({
   outputs,
   outputPlaylistById,
+  telemetryByToken,
+  syncCursorsByPlaylistId,
 }: {
   outputs: BroadcastOutputRecord[];
   outputPlaylistById: Record<string, string | null>;
+  telemetryByToken: Record<string, OutputBeaconSummary[]>;
+  syncCursorsByPlaylistId: SyncCursorSnapshot;
 }) {
   const counts = new Map<string, number>();
   const playlistIdsByGroup = new Map<string, Set<string>>();
+  const outputsByGroup = new Map<string, BroadcastOutputRecord[]>();
   for (const output of outputs) {
     if (!output.groupName) continue;
     counts.set(output.groupName, (counts.get(output.groupName) ?? 0) + 1);
@@ -945,6 +978,8 @@ function GroupsPanel({
       if (!playlistIdsByGroup.has(output.groupName)) playlistIdsByGroup.set(output.groupName, new Set());
       playlistIdsByGroup.get(output.groupName)!.add(pid);
     }
+    if (!outputsByGroup.has(output.groupName)) outputsByGroup.set(output.groupName, []);
+    outputsByGroup.get(output.groupName)!.push(output);
   }
   const groups = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   if (groups.length === 0) return null;
@@ -959,7 +994,12 @@ function GroupsPanel({
       </p>
       <div className="space-y-2">
         {groups.map(([name, count]) => {
-          const distinctPlaylists = playlistIdsByGroup.get(name)?.size ?? 0;
+          const playlistIds = playlistIdsByGroup.get(name);
+          const distinctPlaylists = playlistIds?.size ?? 0;
+          const singlePlaylistId = distinctPlaylists === 1 ? [...playlistIds!][0] : null;
+          const drift = singlePlaylistId
+            ? computeGroupDrift(outputsByGroup.get(name) ?? [], singlePlaylistId, syncCursorsByPlaylistId, telemetryByToken)
+            : [];
           return (
             <div key={name} className="space-y-1.5 border-t border-border/60 pt-2 first:border-t-0 first:pt-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -967,11 +1007,27 @@ function GroupsPanel({
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {count} {count === 1 ? "tela" : "telas"}
                 </span>
+                {singlePlaylistId && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      drift.length === 0
+                        ? "bg-success-soft text-success"
+                        : "border border-warning-border bg-warning-soft text-warning"
+                    }`}
+                  >
+                    {drift.length === 0 ? "Sincronizadas" : `${drift.length} atrasada${drift.length === 1 ? "" : "s"}`}
+                  </span>
+                )}
               </div>
               {distinctPlaylists > 1 && (
                 <p className="rounded-panel border border-warning-border bg-warning-soft p-1.5 text-xs text-warning">
                   As telas deste grupo tocam playlists diferentes — não vão sincronizar entre si. Aponte todas pra mesma
                   playlist na aba Conteúdo.
+                </p>
+              )}
+              {drift.length > 0 && (
+                <p className="text-xs text-warning">
+                  Mostrando item diferente do grupo: {drift.map((entry) => entry.outputName).join(", ")}.
                 </p>
               )}
               <div className="flex flex-wrap gap-1">
@@ -1516,22 +1572,32 @@ type OutputLiveStatus = {
   ipsByToken: Record<string, string[]>;
   blockedTokens: Set<string>;
   telemetryByToken: Record<string, OutputBeaconSummary[]>;
+  // Indicador de drift (backlog item 3) — cursor ATUAL de cada playlist sincronizada, cruzado no
+  // GroupsPanel com o nowPlayingItemId que cada TV do grupo já reporta (telemetryByToken acima)
+  // pra mostrar quem está "atrasado".
+  syncCursorsByPlaylistId: SyncCursorSnapshot;
 };
 
 function useOutputLiveStatus(): OutputLiveStatus {
-  const [status, setStatus] = useState<OutputLiveStatus>({ ipsByToken: {}, blockedTokens: new Set(), telemetryByToken: {} });
+  const [status, setStatus] = useState<OutputLiveStatus>({
+    ipsByToken: {},
+    blockedTokens: new Set(),
+    telemetryByToken: {},
+    syncCursorsByPlaylistId: {},
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     async function poll() {
       if (document.visibilityState !== "visible") return;
-      const [ipsByToken, blocked, telemetryByToken] = await Promise.all([
+      const [ipsByToken, blocked, telemetryByToken, syncCursorsByPlaylistId] = await Promise.all([
         getConnectedOutputIpsAction(),
         getOutputPinBlocksAction(),
         getOutputTelemetryAction(),
+        getSyncCursorsAction(),
       ]);
-      if (!cancelled) setStatus({ ipsByToken, blockedTokens: new Set(blocked), telemetryByToken });
+      if (!cancelled) setStatus({ ipsByToken, blockedTokens: new Set(blocked), telemetryByToken, syncCursorsByPlaylistId });
     }
 
     poll();
@@ -1900,7 +1966,17 @@ function CreateOutputDialog() {
   );
 }
 
-function GroupsDialog({ outputs, outputPlaylistById }: { outputs: BroadcastOutputRecord[]; outputPlaylistById: Record<string, string | null> }) {
+function GroupsDialog({
+  outputs,
+  outputPlaylistById,
+  telemetryByToken,
+  syncCursorsByPlaylistId,
+}: {
+  outputs: BroadcastOutputRecord[];
+  outputPlaylistById: Record<string, string | null>;
+  telemetryByToken: Record<string, OutputBeaconSummary[]>;
+  syncCursorsByPlaylistId: SyncCursorSnapshot;
+}) {
   const hasGroups = outputs.some((output) => output.groupName);
   if (!hasGroups) return null;
   return (
@@ -1915,7 +1991,12 @@ function GroupsDialog({ outputs, outputPlaylistById }: { outputs: BroadcastOutpu
           <DialogTitle>Grupos de telas</DialogTitle>
           <DialogDescription>Ações em lote por grupo.</DialogDescription>
         </DialogHeader>
-        <GroupsPanel outputs={outputs} outputPlaylistById={outputPlaylistById} />
+        <GroupsPanel
+          outputs={outputs}
+          outputPlaylistById={outputPlaylistById}
+          telemetryByToken={telemetryByToken}
+          syncCursorsByPlaylistId={syncCursorsByPlaylistId}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -1946,7 +2027,12 @@ export function OutputsSection({
   canManageAll?: boolean;
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
-  const { ipsByToken: connectedIpsByToken, blockedTokens, telemetryByToken } = useOutputLiveStatus();
+  const {
+    ipsByToken: connectedIpsByToken,
+    blockedTokens,
+    telemetryByToken,
+    syncCursorsByPlaylistId,
+  } = useOutputLiveStatus();
   const allGroups = [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort();
   const agendaEventById = Object.fromEntries(agendaEvents.map((event) => [event.id, event]));
 
@@ -1993,7 +2079,12 @@ export function OutputsSection({
           canManageAll ? (
             <div className="flex flex-col gap-2">
               <CreateOutputDialog />
-              <GroupsDialog outputs={outputs} outputPlaylistById={outputPlaylistById} />
+              <GroupsDialog
+                outputs={outputs}
+                outputPlaylistById={outputPlaylistById}
+                telemetryByToken={telemetryByToken}
+                syncCursorsByPlaylistId={syncCursorsByPlaylistId}
+              />
               <VideosFolderHealthBadge />
             </div>
           ) : undefined

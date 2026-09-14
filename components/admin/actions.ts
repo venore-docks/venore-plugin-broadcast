@@ -17,6 +17,7 @@ import {
   clearTakeover,
   listContentChangeLog,
   listMyContentChanges,
+  getSyncCursors,
   listOfflineOutputs,
   listPendingContentChanges,
   rebaselineLocalItemIntegrity,
@@ -74,7 +75,7 @@ import { importActivePluginBarrel, isPluginActive } from "@venore/plugin-sdk";
 import { isValidTimeZone, normalizeTimeZone, parseWallTimeInZone } from "../../shared/timezone";
 import { parseTimeToMinutes } from "../../shared/playlist-schedule";
 import type { BroadcastContentChangeRecord, BroadcastOutputRecord } from "../../contracts/types";
-import type { LocalItemIntegrityIssue, OfflineOutputInfo } from "../../index";
+import type { LocalItemIntegrityIssue, OfflineOutputInfo, SyncCursorSnapshot } from "../../index";
 import type { OutputBeaconSummary, PlaybackStat, VideosFolderHealth } from "../../index";
 
 // pending: true só nas 9 actions de conteúdo de playlist gateadas (features/content-changes) —
@@ -1240,6 +1241,15 @@ export async function getOfflineOutputsAction(): Promise<OfflineOutputInfo[]> {
 
   const result = await listOfflineOutputs();
   return result.success ? result.data : [];
+}
+
+// Indicador de drift de sincronização (features/diagnostics/get-sync-cursors) — {} em qualquer
+// erro/plugin desativado, igual aos outros get*Action.
+export async function getSyncCursorsAction(): Promise<SyncCursorSnapshot> {
+  if (!(await isPluginActive("broadcast"))) return {};
+
+  const result = await getSyncCursors();
+  return result.success ? result.data : {};
 }
 
 // Sonda best-effort "este site carrega dentro de um iframe na TV?" — chamada pelo formulário de

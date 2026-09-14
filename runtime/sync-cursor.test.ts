@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ADVANCE_DEBOUNCE_MS, advanceSyncCursor, peekSyncCursor, resolveSyncCursor } from "./sync-cursor";
+import { ADVANCE_DEBOUNCE_MS, advanceSyncCursor, peekAllSyncCursors, peekSyncCursor, resolveSyncCursor } from "./sync-cursor";
 
 // Estado em globalThis (ver comentário no módulo) — cada teste começa do zero, mesmo padrão de
 // output-bus.test.ts.
@@ -117,5 +117,21 @@ describe("advanceSyncCursor", () => {
     expect(advanced).toBe(true);
     // índice 2 clampado pro último item existente ("z", índice 1), não pro item 0.
     expect(peekSyncCursor("playlist-1")).toEqual({ itemIndex: 1, itemId: "z", startedAtMs: Date.now() });
+  });
+});
+
+describe("peekAllSyncCursors", () => {
+  it("devolve {} quando nenhuma playlist tem cursor ativo", () => {
+    expect(peekAllSyncCursors()).toEqual({});
+  });
+
+  it("devolve um snapshot plano (sem startedAtMs) de todos os cursores ativos, por playlistId", () => {
+    resolveSyncCursor("playlist-1", ["a", "b"]);
+    resolveSyncCursor("playlist-2", ["x", "y", "z"]);
+
+    expect(peekAllSyncCursors()).toEqual({
+      "playlist-1": { itemId: "a", itemIndex: 0 },
+      "playlist-2": { itemId: "x", itemIndex: 0 },
+    });
   });
 });

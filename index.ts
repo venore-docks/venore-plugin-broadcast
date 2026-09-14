@@ -448,6 +448,11 @@ export type {
   ListOfflineOutputsResult,
   OfflineOutputInfo,
 } from "./features/diagnostics/list-offline-outputs/types";
+// Indicador de drift de sincronização (v1.9.6, roadmap item 3) — snapshot dos cursores ativos
+// (runtime/sync-cursor.ts), cruzado no admin com o nowPlayingItemId que cada TV já reporta via
+// beacon pra mostrar telas "atrasadas" dentro de um grupo sincronizado.
+export { getSyncCursorsHandler as getSyncCursors } from "./features/diagnostics/get-sync-cursors/handler";
+export type { GetSyncCursorsResult, SyncCursorSnapshot } from "./features/diagnostics/get-sync-cursors/types";
 export type {
   BroadcastAgentDiagnosticsSnapshot,
   BroadcastBrowserDiagnosticsSnapshot,

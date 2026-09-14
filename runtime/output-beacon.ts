@@ -28,6 +28,10 @@ export type OutputBeaconSummary = {
   browser: string; // rótulo curto derivado do userAgent
   status: string;
   nowPlaying: string | null;
+  // Cru (não o label formatado de nowPlaying) — indicador de drift (GroupsPanel, outputs-
+  // section.tsx) compara isto direto com o itemId do cursor de sync, sem precisar re-parsear o
+  // label "3/8 — Institucional.mp4".
+  nowPlayingItemId: string | null;
   uptimeSeconds: number;
   lastSeenSecondsAgo: number;
 };
@@ -93,6 +97,7 @@ function summarize(entry: BeaconEntry, now: number): OutputBeaconSummary {
     browser: browserLabel(entry.userAgent),
     status: entry.status,
     nowPlaying: entry.nowPlaying,
+    nowPlayingItemId: entry.nowPlayingItemId,
     uptimeSeconds: Math.max(0, Math.round((now - entry.firstSeenAt) / 1000)),
     lastSeenSecondsAgo: Math.max(0, Math.round((now - entry.lastSeenAt) / 1000)),
   };
