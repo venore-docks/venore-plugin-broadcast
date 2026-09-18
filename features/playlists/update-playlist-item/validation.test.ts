@@ -20,11 +20,10 @@ describe("validateUpdatePlaylistItemInput", () => {
     expect(validateUpdatePlaylistItemInput({ itemId: "item-1", url: "/cursos" })).toBeNull();
   });
 
-  // Pedido explícito: "APENAS ROTAS DO DOMINIO podem ser adicionadas. Nunca sites externos".
-  it("rejects an absolute url", () => {
-    expect(validateUpdatePlaylistItemInput({ itemId: "item-1", url: "https://example.com" })?.code).toBe(
-      "broadcast.update-playlist-item.invalid_url",
-    );
+  // Restrição a rota interna desbloqueada temporariamente em 2026-09-18 (ver shared/webpage-url.ts)
+  // — URL absoluta http(s) volta a ser aceita.
+  it("accepts an absolute url", () => {
+    expect(validateUpdatePlaylistItemInput({ itemId: "item-1", url: "https://example.com" })).toBeNull();
   });
 
   it("rejects a malformed url", () => {

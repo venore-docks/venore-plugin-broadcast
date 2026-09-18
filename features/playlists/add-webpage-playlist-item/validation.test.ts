@@ -6,12 +6,10 @@ describe("validateAddWebpagePlaylistItemInput", () => {
     expect(validateAddWebpagePlaylistItemInput({ playlistId: "p1", url: "/cursos" })).toBeNull();
   });
 
-  // Pedido explícito: "APENAS ROTAS DO DOMINIO podem ser adicionadas. Nunca sites externos" —
-  // URL absoluta (mesmo https) não é mais aceita, só rota interna começando com "/".
-  it("rejects an absolute https URL", () => {
-    expect(validateAddWebpagePlaylistItemInput({ playlistId: "p1", url: "https://example.com/painel" })?.code).toBe(
-      "broadcast.add-webpage-playlist-item.invalid_url",
-    );
+  // Restrição a rota interna desbloqueada temporariamente em 2026-09-18 (ver shared/webpage-url.ts)
+  // — URL absoluta http(s) volta a ser aceita.
+  it("accepts an absolute https URL", () => {
+    expect(validateAddWebpagePlaylistItemInput({ playlistId: "p1", url: "https://example.com/painel" })).toBeNull();
   });
 
   it("rejects a protocol-relative URL", () => {

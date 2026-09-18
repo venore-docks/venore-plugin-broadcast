@@ -539,8 +539,8 @@ function EditPlaylistItemForm({ item, onDone }: { item: BroadcastPlaylistItemRec
       {item.sourceType === "webpage" && (
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${item.id}-edit-url`}>Rota interna do site</label>
-            {url.startsWith("/") && (
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${item.id}-edit-url`}>Rota interna ou URL do site</label>
+            {(url.startsWith("/") || /^https?:\/\//i.test(url)) && (
               <a
                 href={url}
                 target="_blank"
@@ -1094,8 +1094,8 @@ function AddWebpageItemForm({ playlistId, onAdded }: { playlistId: string; onAdd
       <input type="hidden" name="playlistId" value={playlistId} />
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor={`${playlistId}-webpage-url`}>Rota interna do site</label>
-          {url.startsWith("/") && (
+          <label className="text-xs font-medium text-muted-foreground" htmlFor={`${playlistId}-webpage-url`}>Rota interna ou URL do site</label>
+          {(url.startsWith("/") || /^https?:\/\//i.test(url)) && (
             <a
               href={url}
               target="_blank"
@@ -1115,10 +1115,9 @@ function AddWebpageItemForm({ playlistId, onAdded }: { playlistId: string; onAdd
           value={url}
           onChange={(event) => setUrl(event.target.value)}
         />
-        {/* Pedido explícito: "APENAS ROTAS DO DOMINIO podem ser adicionadas. Nunca sites
-            externos" — sem isso, o operador tenta colar um link de fora e só descobre que não
-            funciona depois de errar (a validação real mora em shared/webpage-url.ts). */}
-        <p className="text-xs text-muted-foreground">Só rotas internas deste site (começando com "/") — sites externos não são aceitos.</p>
+        {/* Restrição a rota interna desbloqueada temporariamente em 2026-09-18 (pedido do
+            operador, ver shared/webpage-url.ts) — URL http(s) absoluta volta a ser aceita. */}
+        <p className="text-xs text-muted-foreground">Rota interna deste site (começando com "/") ou URL completa (https://...).</p>
       </div>
       <div className="space-y-1">
         <label className="text-xs font-medium text-muted-foreground" htmlFor={`${playlistId}-webpage-title`}>Título (opcional)</label>

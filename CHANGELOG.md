@@ -4,6 +4,12 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.9
+
+- Item de playlist "Página Web": restrição a rota interna do domínio desbloqueada temporariamente
+  — URL http(s) absoluta volta a ser aceita, pra permitir transmitir a tela de outra instância
+  Venore Docks. Reversível (ver comentário em `shared/webpage-url.ts`).
+
 ## v1.9.5
 
 - Rate limit nos endpoints públicos por token (sync-advance, output-state, beacon, diagnósticos).
