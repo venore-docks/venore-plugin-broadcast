@@ -4,6 +4,19 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.10
+
+- Aba "Playlists" reaberta para quem tem `broadcast.manage` (acesso pleno) — desde a v1.7 ela só
+  existia pra um responsável escopado (`broadcast.playlists.manage` sem `broadcast.manage`), e a
+  playlist própria de cada tela passou a ser editada dentro do detalhe dela (aba Conteúdo). Isso
+  deixava sem edição possível qualquer playlist compartilhada (tocada por mais de uma tela) ou
+  recém-criada: criar/duplicar/apagar playlist só existiam dentro dessa aba, que o admin pleno
+  nunca via. Agora ela volta a aparecer pra ele também, como biblioteca completa de playlists.
+- Aba Conteúdo de uma tela: quando ela toca uma playlist que não é a sua própria (compartilhada ou
+  de outra tela), o card ganhou um link "Editar os itens em Playlists" direto pro card certo (rola
+  e destaca na grade) — antes, uma playlist genuinamente compartilhada não tinha link nenhum pra
+  editar os itens dali.
+
 ## v1.9.9
 
 - Item de playlist "Página Web": restrição a rota interna do domínio desbloqueada temporariamente

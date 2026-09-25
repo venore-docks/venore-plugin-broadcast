@@ -1660,6 +1660,7 @@ function OutputContentTab({
   agendaEvents,
   scheduleSlots,
   canManageAll,
+  canViewPlaylistsTab,
 }: {
   output: BroadcastOutputRecord;
   ownPlaylist: BroadcastPlaylistRecord | null;
@@ -1674,6 +1675,9 @@ function OutputContentTab({
   agendaEvents: BroadcastAgendaEventRecord[];
   scheduleSlots: BroadcastPlaylistScheduleSlot[];
   canManageAll: boolean;
+  // false pra um ator com hasOutputsAccess mas sem hasPlaylistsAccess — esconde o link "Editar em
+  // Playlists" abaixo, que apontaria pra uma aba que esse ator não tem permissão de ver.
+  canViewPlaylistsTab: boolean;
 }) {
   const options = buildPlaylistOptions(output, ownPlaylist, outputs, playlists);
   const playingOwn = ownPlaylist != null && currentPlaylistId === ownPlaylist.id;
@@ -1725,6 +1729,20 @@ function OutputContentTab({
             <span className="font-medium text-foreground">{currentPlaylist?.name ?? "nenhuma playlist"}</span>
             {currentPlaylist ? ` (${currentItemCount} ${currentItemCount === 1 ? "item" : "itens"})` : ""}.
           </p>
+          {/* Antes só existia o link "Editar em Telas" abaixo, e só quando a playlist pertencia a
+              OUTRA tela (ownerOutputId setado) — uma playlist de verdade compartilhada
+              (ownerOutputId nulo) não tinha link nenhum, virava texto morto sem jeito de editar.
+              Este aponta pra aba Playlists (que já existe pra hasFullAccess, ver page.tsx) e cobre
+              os dois casos: playlist de outra tela OU compartilhada. */}
+          {currentPlaylist && canViewPlaylistsTab && (
+            <a
+              href={`?aba=playlists&playlist=${currentPlaylist.id}`}
+              className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+            >
+              Editar os itens em Playlists &rsaquo; {currentPlaylist.name}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </a>
+          )}
           {ownerOutput && (
             <a
               href={`?aba=outputs&tela=${ownerOutput.id}&ver=conteudo`}
@@ -1850,6 +1868,7 @@ function OutputDetail({
   scheduleSlots,
   allGroups,
   canManageAll,
+  canViewPlaylistsTab,
 }: {
   output: BroadcastOutputRecord;
   playlists: BroadcastPlaylistRecord[];
@@ -1867,6 +1886,7 @@ function OutputDetail({
   scheduleSlots: BroadcastPlaylistScheduleSlot[];
   allGroups: string[];
   canManageAll: boolean;
+  canViewPlaylistsTab: boolean;
 }) {
   const ownPlaylist = playlists.find((playlist) => playlist.ownerOutputId === output.id) ?? null;
   const currentPlaylistId = outputPlaylistById[output.id] ?? null;
@@ -1937,6 +1957,7 @@ function OutputDetail({
               agendaEvents={agendaEvents}
               scheduleSlots={scheduleSlots}
               canManageAll={canManageAll}
+              canViewPlaylistsTab={canViewPlaylistsTab}
             />
           </TabsContent>
           <TabsContent value="layout" className="pt-4">
@@ -2028,6 +2049,7 @@ export function OutputsSection({
   agendaEvents = [],
   schedulesByOutputId = {},
   canManageAll = true,
+  canViewPlaylistsTab = true,
   agendaNamesByOutputId = {},
 }: {
   outputs: BroadcastOutputRecord[];
@@ -2041,6 +2063,10 @@ export function OutputsSection({
   // false pra um ator sem broadcast.manage (so broadcast.outputs.manage - "responsavel" por
   // telas especificas, ver page.tsx) - esconde criar/apagar tela + grupos + programacao.
   canManageAll?: boolean;
+  // false quando o ator não tem broadcast.manage nem broadcast.playlists.manage — esconde o link
+  // "Editar em Playlists" da aba Conteúdo (ver OutputContentTab), que apontaria pra uma aba que
+  // esse ator não vê.
+  canViewPlaylistsTab?: boolean;
   agendaNamesByOutputId?: Record<string, string[]>;
 }) {
   const {
@@ -2132,6 +2158,7 @@ export function OutputsSection({
               scheduleSlots={schedulesByOutputId[output.id] ?? []}
               allGroups={allGroups}
               canManageAll={canManageAll}
+              canViewPlaylistsTab={canViewPlaylistsTab}
             />
           );
         }}

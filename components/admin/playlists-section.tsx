@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { ConfirmAlertDialog, ConfirmDeleteButton } from "./confirm-delete-form";
 import { ListDropdownBadge } from "./list-badge";
+import { useUrlParam } from "./master-detail";
 import { SortableList } from "./sortable-list";
 // Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
 // de outputs-section.tsx/layer-renderer.tsx: este é um "use client" component, e o barrel arrasta
@@ -1400,6 +1401,7 @@ function PlaylistCard({
   agendaEventById,
   outputNames,
   canManageAll,
+  isFocused = false,
 }: {
   playlist: BroadcastPlaylistRecord;
   items: BroadcastPlaylistItemRecord[];
@@ -1409,11 +1411,20 @@ function PlaylistCard({
   agendaEventById: Record<string, BroadcastAgendaEventRecord>;
   outputNames: string[];
   canManageAll: boolean;
+  // true quando o operador chegou aqui por um link "Editar em Playlists" (ex: outputs-section.tsx,
+  // uma tela tocando uma playlist que não é a dela) — rola até o card certo e destaca com um anel,
+  // senão o operador teria que procurar manualmente na grade.
+  isFocused?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const status = playlistItemStatus(items.length);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isFocused) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [isFocused]);
 
   return (
+    <div ref={cardRef} className={isFocused ? "rounded-panel ring-2 ring-primary" : undefined}>
     <Card className={`gap-3 border-l-4 ${STATUS_BORDER_CLASSNAME[status.tone]}`}>
       <CardHeader>
         <CardTitle className="truncate">{playlist.name}</CardTitle>
@@ -1490,6 +1501,7 @@ function PlaylistCard({
         </Button>
       </CardFooter>
     </Card>
+    </div>
   );
 }
 
@@ -1524,6 +1536,9 @@ export function PlaylistsSection({
     () => Object.fromEntries(agendaEvents.map((event) => [event.id, event])),
     [agendaEvents],
   );
+  // Veio de um link "Editar em Playlists" (?playlist=<id>, ver outputs-section.tsx) — rola até o
+  // card certo na grade e destaca, em vez do operador procurar manualmente entre várias playlists.
+  const [focusPlaylistId] = useUrlParam("playlist", null);
 
   return (
     <div className="space-y-4">
@@ -1551,6 +1566,7 @@ export function PlaylistsSection({
             agendaEventById={agendaEventById}
             outputNames={outputNamesByPlaylistId[playlist.id] ?? []}
             canManageAll={canManageAll}
+            isFocused={playlist.id === focusPlaylistId}
           />
         ))}
       </div>

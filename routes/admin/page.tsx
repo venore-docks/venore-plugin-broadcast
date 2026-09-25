@@ -228,6 +228,10 @@ export default async function BroadcastAdminPage() {
       agendaEvents={agendaEvents}
       schedulesByOutputId={outputPlaylistSchedulesByOutputId}
       canManageAll={hasFullAccess}
+      // Controla só se o link "Editar em Playlists" (aba Conteúdo, playlist que não é a própria da
+      // tela) aparece — sem isso, um ator com hasOutputsAccess mas sem hasPlaylistsAccess (raro:
+      // "responsável" só de telas) veria um link morto pra uma aba que ele não tem permissão de ver.
+      canViewPlaylistsTab={hasPlaylistsAccess}
       agendaNamesByOutputId={agendaNamesByOutputId}
     />
   );
@@ -366,15 +370,23 @@ export default async function BroadcastAdminPage() {
       status: outputsTabStatus(outputs, outputHasPlaylistById),
       itemCount: outputs.length,
     },
-    // v1.7: a playlist de cada tela é editada dentro do detalhe da própria tela (aba Conteúdo) —
-    // o admin pleno não tem mais aba "Playlists". A aba só aparece pra um responsável escopado
-    // (broadcast.playlists.manage sem broadcast.manage), que precisa de um lugar pra editar as
-    // playlists atribuídas a ele sem acesso a Telas.
-    hasPlaylistsAccess && !hasFullAccess && {
+    // v1.7 tinha tirado esta aba pro admin pleno (a ideia era editar a playlist de cada tela
+    // dentro do detalhe dela, aba Conteúdo) — mas isso só cobre a playlist PRÓPRIA de uma tela.
+    // Uma playlist compartilhada (ownerOutputId nulo, tocada por várias telas) ou recém-criada
+    // (ainda sem tela nenhuma) não tinha ponto de edição NENHUM: criar/duplicar/apagar playlist
+    // (CreatePlaylistForm/DuplicatePlaylistButton/DeletePlaylistButton, playlists-section.tsx)
+    // só existe dentro desta aba, e o handler de cada uma delas já exige broadcast.manage — ou
+    // seja, só quem tem acesso pleno pode de fato acioná-las, mas era exatamente quem nunca via a
+    // aba. Reaberta (v1.9.10) pra hasFullAccess também: vira a "biblioteca" de playlists (criar/
+    // duplicar/apagar + editar item a item de qualquer uma), sem substituir o atalho de dentro da
+    // aba Conteúdo de uma tela pro caso comum (tela tocando a própria playlist dedicada).
+    hasPlaylistsAccess && {
       key: "playlists",
-      label: "Playlists atribuídas",
+      label: hasFullAccess ? "Playlists" : "Playlists atribuídas",
       icon: <ListVideo aria-hidden="true" />,
-      description: "As playlists atribuídas a você. A ordem aqui é a ordem de reprodução na tela.",
+      description: hasFullAccess
+        ? "Todas as playlists do estúdio — crie, duplique, apague ou edite os itens. A playlist própria de uma tela também pode ser editada por lá, na aba Conteúdo."
+        : "As playlists atribuídas a você. A ordem aqui é a ordem de reprodução na tela.",
       view: playlistsView,
       status: playlistsTabStatus(playlists, playlistItemCountById),
       itemCount: playlists.length,
