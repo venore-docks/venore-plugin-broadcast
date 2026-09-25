@@ -264,6 +264,8 @@ export type BroadcastOutputRecord = {
   frozen: boolean;
   // Transmissão ao vivo que a tela mostra no lugar da playlist (v1.9.11) — null = conteúdo normal.
   liveStreamId: string | null;
+  // Legenda ligada quando esta tela mostra uma transmissão ao vivo (v1.9.13).
+  liveStreamCaptions: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -359,6 +361,8 @@ export type BroadcastOutputEvent =
   | { type: "takeover-changed" }
   // Transmissão ao vivo entrou/saiu desta tela — mesmo tratamento genérico "!= state → rebuscar".
   | { type: "live-stream-changed" }
+  // Opção de legenda da transmissão desta tela mudou.
+  | { type: "live-stream-captions-changed"; captions: boolean }
   | { type: "playlist-changed" }
   // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
   // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".

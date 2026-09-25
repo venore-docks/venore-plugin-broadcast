@@ -1,0 +1,1 @@
+ALTER TABLE "broadcast"."outputs" ADD COLUMN "live_stream_captions" boolean DEFAULT false NOT NULL;

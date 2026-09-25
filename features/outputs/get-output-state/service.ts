@@ -367,7 +367,8 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
 
   // Transmissão ao vivo (v1.9.11) — no lugar da playlist enquanto a tela apontar pra ela. Só o id
   // validado vai pra TV; o embed é montado lá (shared/youtube.ts).
-  const liveStream = output.liveStreamId ? await findLiveStreamById(output.liveStreamId) : null;
+  const liveStreamRow = output.liveStreamId ? await findLiveStreamById(output.liveStreamId) : null;
+  const liveStream = liveStreamRow ? { ...liveStreamRow, captions: output.liveStreamCaptions ?? false } : null;
 
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
   for (const layer of layers) {

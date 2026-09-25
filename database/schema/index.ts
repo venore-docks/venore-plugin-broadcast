@@ -392,6 +392,10 @@ export const broadcastOutputs = broadcastSchema.table(
     // Transmissão ao vivo que esta tela está mostrando no lugar da playlist (ver
     // broadcastLiveStreams). null = conteúdo normal. set null se a transmissão for apagada.
     liveStreamId: text("live_stream_id").references(() => broadcastLiveStreams.id, { onDelete: "set null" }),
+    // Legenda na transmissão ao vivo (v1.9.13) — opção fixa da TELA, não da transmissão: depende de
+    // onde a TV fica (ambiente barulhento/sem som quer legenda, auditório não). false = a TV desliga
+    // a legenda à força; true = força a legenda ligada (preferência pt). Vale pra toda transmissão.
+    liveStreamCaptions: boolean("live_stream_captions").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

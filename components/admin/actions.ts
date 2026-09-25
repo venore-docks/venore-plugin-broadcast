@@ -58,6 +58,7 @@ import {
   setOutputFallback,
   setOutputCardColor,
   setOutputFrozen,
+  setOutputLiveStreamCaptions,
   setOutputGroup,
   setOutputHours,
   setOutputOffline,
@@ -1116,6 +1117,22 @@ export async function setOutputFrozenAction(_prevState: BroadcastActionState, fo
   const result = await setOutputFrozen({
     outputId: requireString(formData, "outputId"),
     frozen: formData.get("frozen") === "true",
+  });
+  if (!result.success) return { error: result.error.message, output: null };
+
+  return { error: null, output: result.data };
+}
+
+// Legenda na transmissão ao vivo, por tela (v1.9.13) — mesmo toggle otimista de Congelar.
+export async function setOutputLiveStreamCaptionsAction(
+  _prevState: BroadcastActionState,
+  formData: FormData,
+): Promise<BroadcastOutputToggleState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR, output: null };
+
+  const result = await setOutputLiveStreamCaptions({
+    outputId: requireString(formData, "outputId"),
+    captions: formData.get("liveStreamCaptions") === "true",
   });
   if (!result.success) return { error: result.error.message, output: null };
 

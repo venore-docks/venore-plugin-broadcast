@@ -4,6 +4,14 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.13
+
+- Legenda da transmissão ao vivo escolhida por tela: novo interruptor "Legenda na transmissão ao
+  vivo" no detalhe da tela (seção Exibição), desligado por padrão. Ligado, a TV força a legenda do
+  YouTube (preferência português); desligado, continua desligando à força (v1.9.12). Trocar a opção
+  vale na hora, sem recarregar a transmissão. Só aparece legenda se o vídeo/transmissão tiver uma.
+- Migration `0019_live_stream_captions` (`outputs.live_stream_captions`, default false).
+
 ## v1.9.12
 
 - Transmissão ao vivo: legenda desligada na TV. O embed passa a habilitar a JS API do YouTube e a

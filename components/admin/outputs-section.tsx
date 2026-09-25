@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import * as QRCode from "qrcode";
 import {
+  Captions,
+  CaptionsOff,
   Check,
   Clock,
   Copy,
@@ -67,6 +69,7 @@ import {
   deleteOutputAction,
   duplicateOutputAction,
   setOutputFrozenAction,
+  setOutputLiveStreamCaptionsAction,
   setOutputCardColorAction,
   setOutputGroupAction,
   getConnectedOutputIpsAction,
@@ -451,7 +454,7 @@ function LayerToggleRow({
   // A action devolve BroadcastOutputToggleState (saída atualizada) e NÃO chama revalidatePath — o
   // Switch reflete o clique na hora e reconcilia com o registro devolvido. Ver actions.ts.
   action: (state: BroadcastActionState, formData: FormData) => Promise<BroadcastOutputToggleState>;
-  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline" | "frozen";
+  fieldName: "drawerOpen" | "footerOpen" | "tickerEnabled" | "offline" | "frozen" | "liveStreamCaptions";
   checked: boolean;
   iconOn: ReactNode;
   iconOff: ReactNode;
@@ -1258,6 +1261,17 @@ function OutputStandbySection({ output }: { output: BroadcastOutputRecord }) {
           label="Congelar"
           description="Trava o item atual — a playlist para de avançar (sem ir pra espera)"
           tone="accent"
+        />
+        <LayerToggleRow
+          output={output}
+          action={setOutputLiveStreamCaptionsAction}
+          fieldName="liveStreamCaptions"
+          checked={output.liveStreamCaptions}
+          iconOn={<Captions className="size-4" />}
+          iconOff={<CaptionsOff className="size-4" />}
+          label="Legenda na transmissão ao vivo"
+          description="Mostra a legenda do YouTube quando a transmissão tiver uma"
+          tone="primary"
         />
       </div>
     </div>

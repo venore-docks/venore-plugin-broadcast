@@ -159,15 +159,15 @@ describe("getOutputState", () => {
     expect(findLiveStreamById).not.toHaveBeenCalled();
   });
 
-  it("exposes the live stream the output points to (only the validated id and title)", async () => {
-    findOutputByToken.mockResolvedValue({ id: "o1", currentSceneId: null, liveStreamId: "ls-1" });
+  it("exposes the live stream the output points to, with the screen's caption option", async () => {
+    findOutputByToken.mockResolvedValue({ id: "o1", currentSceneId: null, liveStreamId: "ls-1", liveStreamCaptions: true });
     findLiveStreamById.mockResolvedValue({ videoId: "dQw4w9WgXcQ", title: "Culto ao vivo" });
 
     const { getOutputState } = await import("./service");
     const result = await getOutputState({ token: "tok-1" });
 
     expect(findLiveStreamById).toHaveBeenCalledWith("ls-1");
-    expect(result.success && result.data.liveStream).toEqual({ videoId: "dQw4w9WgXcQ", title: "Culto ao vivo" });
+    expect(result.success && result.data.liveStream).toEqual({ videoId: "dQw4w9WgXcQ", title: "Culto ao vivo", captions: true });
   });
 
   it("classifies local playlist items as video or image by extension, and resolves asset URLs for image layers", async () => {

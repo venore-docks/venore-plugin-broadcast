@@ -299,7 +299,8 @@ function LiveStreamPanel({
       </p>
       <p className="text-xs text-muted-foreground">
         Entra no lugar da playlist, em tela cheia e com som, nas telas que você escolher — até você tirar. Cada tela assiste
-        direto do YouTube. O som só toca se o navegador da TV estiver configurado para permitir áudio automático.
+        direto do YouTube. O som só toca se o navegador da TV estiver configurado para permitir áudio automático. Legenda
+        é opção de cada tela (detalhe da tela → Exibição).
       </p>
 
       {outputs.length === 0 ? (

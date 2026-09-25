@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseYouTubeLink, youTubeEmbedUrl } from "./youtube";
+import { parseYouTubeLink, youTubeCaptionsMessages, youTubeEmbedUrl } from "./youtube";
 
 const ID = "dQw4w9WgXcQ";
 
@@ -53,8 +53,22 @@ describe("youTubeEmbedUrl", () => {
     expect(url.searchParams.get("mute")).toBe("0");
   });
 
-  it("habilita a JS API (necessária pra desligar a legenda via postMessage)", () => {
+  it("habilita a JS API (necessária pra ligar/desligar a legenda via postMessage)", () => {
     const url = new URL(youTubeEmbedUrl(ID));
     expect(url.searchParams.get("enablejsapi")).toBe("1");
+  });
+
+  it("sem legenda por padrão; com captions força a legenda em português", () => {
+    expect(new URL(youTubeEmbedUrl(ID)).searchParams.get("cc_load_policy")).toBe("0");
+    const withCaptions = new URL(youTubeEmbedUrl(ID, { captions: true }));
+    expect(withCaptions.searchParams.get("cc_load_policy")).toBe("1");
+    expect(withCaptions.searchParams.get("cc_lang_pref")).toBe("pt");
+  });
+});
+
+describe("youTubeCaptionsMessages", () => {
+  it("descarrega o módulo de legendas quando desligada e carrega quando ligada", () => {
+    expect(youTubeCaptionsMessages(false).map((m) => JSON.parse(m).func)).toEqual(["unloadModule", "unloadModule"]);
+    expect(youTubeCaptionsMessages(true).map((m) => JSON.parse(m).func)).toEqual(["loadModule", "loadModule"]);
   });
 });

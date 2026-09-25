@@ -190,6 +190,7 @@ export { setOutputTickerHandler as setOutputTicker } from "./features/outputs/se
 export { setOutputOfflineHandler as setOutputOffline } from "./features/outputs/set-output-offline/handler";
 // "Congelar" — trava o item atual (playlist para de avançar) sem ir pra tela de espera.
 export { setOutputFrozenHandler as setOutputFrozen } from "./features/outputs/set-output-frozen/handler";
+export { setOutputLiveStreamCaptionsHandler as setOutputLiveStreamCaptions } from "./features/outputs/set-output-live-stream-captions/handler";
 export type { SetOutputFrozenInput, SetOutputFrozenResult } from "./features/outputs/set-output-frozen/types";
 // Ciclo fixo de abrir/pausar a coluna lateral (janela aberta + janela de pausa, ver
 // database/schema/index.ts) — ver shared/scoped-authorization (mesmo authorizeOutputActor de

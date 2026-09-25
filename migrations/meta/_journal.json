@@ -134,6 +134,13 @@
       "when": 1790332071729,
       "tag": "0018_live_streams",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790339982297,
+      "tag": "0019_live_stream_captions",
+      "breakpoints": true
     }
   ]
 }
