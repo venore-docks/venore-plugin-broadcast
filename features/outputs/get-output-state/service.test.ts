@@ -37,6 +37,7 @@ const findActiveTakeover = vi.fn();
 const findAgendaEventById = vi.fn();
 const findPlaylistScheduleForOutput = vi.fn();
 const findAllEnabledScheduledAlerts = vi.fn();
+const findLiveStreamById = vi.fn();
 vi.mock("./store", () => ({
   findOutputByToken: (...args: unknown[]) => findOutputByToken(...args),
   findSceneById: (...args: unknown[]) => findSceneById(...args),
@@ -50,6 +51,7 @@ vi.mock("./store", () => ({
   findAgendaEventById: (...args: unknown[]) => findAgendaEventById(...args),
   findPlaylistScheduleForOutput: (...args: unknown[]) => findPlaylistScheduleForOutput(...args),
   findAllEnabledScheduledAlerts: (...args: unknown[]) => findAllEnabledScheduledAlerts(...args),
+  findLiveStreamById: (...args: unknown[]) => findLiveStreamById(...args),
 }));
 
 describe("getOutputState", () => {
@@ -71,6 +73,7 @@ describe("getOutputState", () => {
     findAgendaEventById.mockReset();
     findPlaylistScheduleForOutput.mockReset();
     findAllEnabledScheduledAlerts.mockReset();
+    findLiveStreamById.mockReset();
     // Sem aviso agendado por padrão — os testes de avisos agendados sobrescrevem.
     findAllEnabledScheduledAlerts.mockResolvedValue([]);
     // Defaults sensatos pra testes que disparam a resolução (agora a camada "video" também
@@ -127,6 +130,7 @@ describe("getOutputState", () => {
         takeoverMessage: null,
         takeoverMediaUrl: null,
         takeoverExpiresAt: null,
+        liveStream: null,
         scene: null,
         layers: [],
         playlistItemsByPlaylistId: {},
@@ -152,6 +156,18 @@ describe("getOutputState", () => {
     expect(findAllAgendas).not.toHaveBeenCalled();
     expect(findActiveAlert).not.toHaveBeenCalled();
     expect(getBrandConfig).not.toHaveBeenCalled();
+    expect(findLiveStreamById).not.toHaveBeenCalled();
+  });
+
+  it("exposes the live stream the output points to (only the validated id and title)", async () => {
+    findOutputByToken.mockResolvedValue({ id: "o1", currentSceneId: null, liveStreamId: "ls-1" });
+    findLiveStreamById.mockResolvedValue({ videoId: "dQw4w9WgXcQ", title: "Culto ao vivo" });
+
+    const { getOutputState } = await import("./service");
+    const result = await getOutputState({ token: "tok-1" });
+
+    expect(findLiveStreamById).toHaveBeenCalledWith("ls-1");
+    expect(result.success && result.data.liveStream).toEqual({ videoId: "dQw4w9WgXcQ", title: "Culto ao vivo" });
   });
 
   it("classifies local playlist items as video or image by extension, and resolves asset URLs for image layers", async () => {

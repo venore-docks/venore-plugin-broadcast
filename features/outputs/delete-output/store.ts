@@ -1,6 +1,7 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@venore/plugin-sdk";
 import { broadcastLayers, broadcastOutputs, broadcastPlaylists, broadcastScenes } from "../../../database/schema";
+import { deleteOrphanLiveStreams } from "../../../shared/live-stream-cleanup";
 
 // A cena de uma saída (key: "output-${outputId}") é dedicada a ela — nada mais a referencia. A FK
 // output.currentSceneId é onDelete:"set null" (não cascade), então apagar a saída sozinha deixaria
@@ -66,6 +67,8 @@ export async function deleteOutputById(id: string): Promise<boolean> {
         await tx.delete(broadcastPlaylists).where(eq(broadcastPlaylists.id, ownedPlaylist.id));
       }
     }
+    // Se esta era a última tela de uma transmissão ao vivo, a transmissão não está mais no ar.
+    await deleteOrphanLiveStreams(tx);
     return true;
   });
 }

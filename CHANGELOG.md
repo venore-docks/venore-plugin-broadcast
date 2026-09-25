@@ -4,6 +4,20 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.11
+
+- Transmissão ao vivo do YouTube (Dashboard → "Transmissão ao vivo"): cola o link da transmissão
+  (`youtube.com/watch?v=…`, `youtube.com/live/…`, `youtu.be/…`), marca as telas (atalhos "Todas" e
+  por grupo) e ela entra no lugar da playlist, em tela cheia e com som, até alguém tirar — por tela
+  (× no chip) ou em todas ("Encerrar em todas"). Cada TV consome o YouTube direto pelo embed; o
+  servidor só valida o link e entrega o id do vídeo. Vence o modo espera e o horário de
+  funcionamento; só o comunicado de urgência passa por cima (e a transmissão volta sozinha quando ele
+  expira). Link de canal (`@canal/live`) é recusado com explicação, e vídeo privado/removido ou com
+  incorporação desativada é barrado antes de ir pras telas (consulta oEmbed, best-effort).
+- Som exige o navegador da TV com `--autoplay-policy=no-user-gesture-required`, igual aos vídeos
+  "Tocar áudio na TV".
+- Migration `0018_live_streams` (tabela `broadcast.live_streams` + `outputs.live_stream_id`).
+
 ## v1.9.10
 
 - Aba "Playlists" reaberta para quem tem `broadcast.manage` (acesso pleno) — desde a v1.7 ela só
