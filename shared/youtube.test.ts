@@ -52,4 +52,9 @@ describe("youTubeEmbedUrl", () => {
     expect(url.searchParams.get("autoplay")).toBe("1");
     expect(url.searchParams.get("mute")).toBe("0");
   });
+
+  it("habilita a JS API (necessária pra desligar a legenda via postMessage)", () => {
+    const url = new URL(youTubeEmbedUrl(ID));
+    expect(url.searchParams.get("enablejsapi")).toBe("1");
+  });
 });

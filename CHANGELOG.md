@@ -4,6 +4,12 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.12
+
+- Transmissão ao vivo: legenda desligada na TV. O embed passa a habilitar a JS API do YouTube e a
+  view da TV manda `unloadModule("captions")` ao player (logo após carregar e a cada 30s, porque o
+  player religa sozinho). `cc_load_policy=0` sozinho não resolvia — o YouTube só honra o valor 1.
+
 ## v1.9.11
 
 - Transmissão ao vivo do YouTube (Dashboard → "Transmissão ao vivo"): cola o link da transmissão

@@ -73,10 +73,15 @@ export function youTubeWatchUrl(videoId: string): string {
 // src do <iframe> na TV: autoplay com som (mute=0 — só funciona no navegador de TV configurado com
 // --autoplay-policy=no-user-gesture-required, mesma exigência dos vídeos "Tocar áudio na TV"), sem
 // controles, sem vídeos relacionados no fim, sem anotações e sem atalho de teclado.
+// enablejsapi=1: deixa a view da TV mandar comandos pro player via postMessage — usado pra desligar
+// a legenda (YOUTUBE_DISABLE_CAPTIONS_MESSAGES). cc_load_policy=0 sozinho NÃO desliga: o YouTube só
+// honra o valor 1 (forçar); legenda automática/preferência do navegador continua ligando.
 export function youTubeEmbedUrl(videoId: string): string {
   const params = new URLSearchParams({
     autoplay: "1",
     mute: "0",
+    enablejsapi: "1",
+    cc_load_policy: "0",
     controls: "0",
     playsinline: "1",
     rel: "0",
@@ -86,6 +91,16 @@ export function youTubeEmbedUrl(videoId: string): string {
   });
   return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }
+
+// Comandos da IFrame Player API (formato postMessage, sem carregar o script youtube.com/iframe_api)
+// que descarregam o módulo de legendas — "captions" (player HTML5 atual) e "cc" (nome antigo). O
+// player recarrega o módulo em troca de qualidade/reconexão da transmissão, por isso a TV reenvia
+// periodicamente (LiveStreamScreen, output-canvas.tsx). Comando repetido é inofensivo.
+export const YOUTUBE_DISABLE_CAPTIONS_MESSAGES: readonly string[] = ["captions", "cc"].map((module) =>
+  JSON.stringify({ event: "command", func: "unloadModule", args: [module] }),
+);
+
+export const YOUTUBE_PLAYER_ORIGIN = "https://www.youtube.com";
 
 export function youTubeThumbnailUrl(videoId: string): string {
   return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
