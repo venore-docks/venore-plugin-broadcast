@@ -4,10 +4,15 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.14
+
+- Texto do painel "Transmissão ao vivo" corrigido: a opção de legenda fica em Telas → aba
+  Disponibilidade (seção Exibição), não numa aba "Exibição".
+
 ## v1.9.13
 
 - Legenda da transmissão ao vivo escolhida por tela: novo interruptor "Legenda na transmissão ao
-  vivo" no detalhe da tela (seção Exibição), desligado por padrão. Ligado, a TV força a legenda do
+  vivo" no detalhe da tela (aba Disponibilidade, seção Exibição), desligado por padrão. Ligado, a TV força a legenda do
   YouTube (preferência português); desligado, continua desligando à força (v1.9.12). Trocar a opção
   vale na hora, sem recarregar a transmissão. Só aparece legenda se o vídeo/transmissão tiver uma.
 - Migration `0019_live_stream_captions` (`outputs.live_stream_captions`, default false).
