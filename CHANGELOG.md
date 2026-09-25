@@ -4,6 +4,13 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.15
+
+- Transmissão ao vivo: autoplay voltou a falhar no Brave depois da v1.9.12 (comandos de legenda
+  mandados ao player logo após o load, antes do vídeo começar). Agora a TV faz o handshake da
+  IFrame API, só mexe na legenda quando o player avisa que está tocando, e manda `playVideo` se ele
+  não tiver começado em 4/8/15s.
+
 ## v1.9.14
 
 - Texto do painel "Transmissão ao vivo" corrigido: a opção de legenda fica em Telas → aba

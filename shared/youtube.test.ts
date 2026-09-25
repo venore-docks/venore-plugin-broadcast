@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseYouTubeLink, youTubeCaptionsMessages, youTubeEmbedUrl } from "./youtube";
+import { parseYouTubeLink, parseYouTubePlayerState, youTubeCaptionsMessages, youTubeEmbedUrl } from "./youtube";
 
 const ID = "dQw4w9WgXcQ";
 
@@ -70,5 +70,19 @@ describe("youTubeCaptionsMessages", () => {
   it("descarrega o módulo de legendas quando desligada e carrega quando ligada", () => {
     expect(youTubeCaptionsMessages(false).map((m) => JSON.parse(m).func)).toEqual(["unloadModule", "unloadModule"]);
     expect(youTubeCaptionsMessages(true).map((m) => JSON.parse(m).func)).toEqual(["loadModule", "loadModule"]);
+  });
+});
+
+describe("parseYouTubePlayerState", () => {
+  it("lê o playerState de infoDelivery e onStateChange (string JSON ou objeto)", () => {
+    expect(parseYouTubePlayerState(JSON.stringify({ event: "infoDelivery", info: { playerState: 1 } }))).toBe(1);
+    expect(parseYouTubePlayerState({ event: "onStateChange", info: -1 })).toBe(-1);
+  });
+
+  it("ignora mensagens sem estado ou que não são do player", () => {
+    expect(parseYouTubePlayerState(JSON.stringify({ event: "infoDelivery", info: { currentTime: 3 } }))).toBeNull();
+    expect(parseYouTubePlayerState(JSON.stringify({ event: "onReady" }))).toBeNull();
+    expect(parseYouTubePlayerState("não é json")).toBeNull();
+    expect(parseYouTubePlayerState(42)).toBeNull();
   });
 });

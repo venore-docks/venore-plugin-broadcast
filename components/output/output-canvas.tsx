@@ -12,7 +12,15 @@ import {
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
 import { FreezeContext, NowPlayingContext, SyncContext, type NowPlayingInfo, type SyncInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
-import { YOUTUBE_PLAYER_ORIGIN, youTubeCaptionsMessages, youTubeEmbedUrl } from "../../shared/youtube";
+import {
+  YOUTUBE_LISTENING_MESSAGE,
+  YOUTUBE_PLAYER_ORIGIN,
+  YOUTUBE_STATE_PLAYING,
+  parseYouTubePlayerState,
+  youTubeCaptionsMessages,
+  youTubeEmbedUrl,
+  youTubePlayerCommand,
+} from "../../shared/youtube";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
 // racional do GEOMETRY_TRANSITION em layer-renderer.tsx) — fica como constante local.
@@ -521,35 +529,67 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
 // ("erro de configuração do player"). key={videoId}: troca de transmissão remonta o iframe; refetch
 // de estado com o mesmo id reaproveita o mesmo iframe, sem recarregar a transmissão.
 // Legenda: opção da tela (outputs.live_stream_captions), aplicada via postMessage (ver
-// youTubeCaptionsMessages) — nos primeiros segundos após o load (o player demora a ficar pronto pra
-// ouvir comandos) e depois a cada CAPTIONS_REAPPLY_INTERVAL_MS, porque o player mexe no módulo
-// sozinho ao reconectar/trocar qualidade. Trocar a opção no admin reaplica na hora, sem recarregar o
-// iframe (o src inicial é o do primeiro render — o player já está tocando, não vale reiniciar).
-const CAPTIONS_INITIAL_DELAYS_MS = [1000, 3000, 6000, 12000];
+// youTubeCaptionsMessages) — SÓ depois que o player avisa que está tocando (playerState 1, via
+// handshake "listening"). v1.9.12 mandava os comandos às cegas logo após o load, antes do vídeo
+// começar, e no Brave o autoplay parou de acontecer; esperar o "tocando" tira qualquer comando do
+// caminho do autoplay. Reaplica a cada CAPTIONS_REAPPLY_INTERVAL_MS enquanto toca, porque o player
+// mexe no módulo sozinho ao reconectar/trocar qualidade. Trocar a opção no admin reaplica na hora,
+// sem recarregar o iframe.
+// Autoplay: se o player não estiver tocando em PLAY_NUDGE_DELAYS_MS, a TV manda "playVideo" — rede
+// de segurança pra navegador que carregou o player mas não iniciou sozinho.
 const CAPTIONS_REAPPLY_INTERVAL_MS = 30000;
+const LISTENING_DELAYS_MS = [0, 500, 1500, 3000];
+const PLAY_NUDGE_DELAYS_MS = [4000, 8000, 15000];
 
 function LiveStreamScreen({ videoId, title, captions }: { videoId: string; title: string | null; captions: boolean }) {
   // src fixado no primeiro render por videoId: mudar `captions` não pode trocar o src (recarregaria
-  // a transmissão); a troca vai por postMessage no efeito abaixo.
+  // a transmissão); a troca vai por postMessage.
   const [initialSrc] = useState(() => youTubeEmbedUrl(videoId, { captions }));
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loadCount, setLoadCount] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
+  const send = useCallback((messages: string[]) => {
+    const target = iframeRef.current?.contentWindow;
+    if (!target) return;
+    for (const message of messages) target.postMessage(message, YOUTUBE_PLAYER_ORIGIN);
+  }, []);
+
+  // Estado do player: escuta as mensagens deste iframe e faz o handshake após cada load.
   useEffect(() => {
     if (loadCount === 0) return;
-    const applyCaptions = () => {
-      const target = iframeRef.current?.contentWindow;
-      if (!target) return;
-      for (const message of youTubeCaptionsMessages(captions)) target.postMessage(message, YOUTUBE_PLAYER_ORIGIN);
+    let isPlaying = false;
+    setPlaying(false);
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const state = parseYouTubePlayerState(event.data);
+      if (state === null) return;
+      isPlaying = state === YOUTUBE_STATE_PLAYING;
+      setPlaying(isPlaying);
     };
-    applyCaptions();
-    const timeouts = CAPTIONS_INITIAL_DELAYS_MS.map((delay) => setTimeout(applyCaptions, delay));
-    const interval = setInterval(applyCaptions, CAPTIONS_REAPPLY_INTERVAL_MS);
+    window.addEventListener("message", onMessage);
+    const timeouts = [
+      ...LISTENING_DELAYS_MS.map((delay) => setTimeout(() => send([YOUTUBE_LISTENING_MESSAGE]), delay)),
+      ...PLAY_NUDGE_DELAYS_MS.map((delay) =>
+        setTimeout(() => {
+          if (!isPlaying) send([youTubePlayerCommand("playVideo")]);
+        }, delay),
+      ),
+    ];
     return () => {
+      window.removeEventListener("message", onMessage);
       timeouts.forEach(clearTimeout);
-      clearInterval(interval);
     };
-  }, [loadCount, captions]);
+  }, [loadCount, send]);
+
+  // Legenda: só com o vídeo tocando.
+  useEffect(() => {
+    if (!playing) return;
+    const applyCaptions = () => send(youTubeCaptionsMessages(captions));
+    applyCaptions();
+    const interval = setInterval(applyCaptions, CAPTIONS_REAPPLY_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [playing, captions, send]);
 
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ background: "#000000" }}>

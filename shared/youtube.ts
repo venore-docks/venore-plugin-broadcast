@@ -102,7 +102,39 @@ export function youTubeEmbedUrl(videoId: string, options: { captions?: boolean }
 // output-canvas.tsx). Comando repetido é inofensivo.
 export function youTubeCaptionsMessages(captions: boolean): string[] {
   const func = captions ? "loadModule" : "unloadModule";
-  return ["captions", "cc"].map((module) => JSON.stringify({ event: "command", func, args: [module] }));
+  return ["captions", "cc"].map((module) => youTubePlayerCommand(func, [module]));
+}
+
+export function youTubePlayerCommand(func: string, args: unknown[] = []): string {
+  return JSON.stringify({ event: "command", func, args });
+}
+
+// Handshake da IFrame Player API: depois dele o player passa a mandar pro pai eventos
+// "infoDelivery"/"onStateChange" com o playerState — é assim que a TV sabe se o vídeo já está
+// tocando antes de mexer na legenda (ver LiveStreamScreen).
+export const YOUTUBE_LISTENING_MESSAGE = JSON.stringify({ event: "listening", id: 1, channel: "widget" });
+
+// playerState do YouTube: -1 não iniciado, 0 fim, 1 tocando, 2 pausado, 3 carregando, 5 pronto (cued).
+export const YOUTUBE_STATE_PLAYING = 1;
+
+// Lê o playerState de uma mensagem do player (string JSON ou objeto); null se a mensagem não traz.
+export function parseYouTubePlayerState(data: unknown): number | null {
+  let message: unknown = data;
+  if (typeof data === "string") {
+    try {
+      message = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+  if (!message || typeof message !== "object") return null;
+  const { event, info } = message as { event?: unknown; info?: unknown };
+  if (event === "onStateChange" && typeof info === "number") return info;
+  if (event === "infoDelivery" && info && typeof info === "object") {
+    const state = (info as { playerState?: unknown }).playerState;
+    return typeof state === "number" ? state : null;
+  }
+  return null;
 }
 
 export const YOUTUBE_PLAYER_ORIGIN = "https://www.youtube.com";
