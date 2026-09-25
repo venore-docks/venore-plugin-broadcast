@@ -12,6 +12,7 @@ import {
 import { AlertBanner, LayerRenderer, useTimedAdvance } from "./layer-renderer";
 import { FreezeContext, NowPlayingContext, SyncContext, type NowPlayingInfo, type SyncInfo } from "./now-playing-context";
 import { StandbyScreen } from "./standby-screen";
+import { youTubeEmbedUrl } from "../../shared/youtube";
 
 // Duração da troca de cena é comportamento do plugin, não decisão de design de marca (mesmo
 // racional do GEOMETRY_TRANSITION em layer-renderer.tsx) — fica como constante local.
@@ -201,7 +202,15 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
       globalThis.crypto?.randomUUID?.() ?? `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
   const beaconStatusRef = useRef("playing");
-  beaconStatusRef.current = state.offline ? "standby" : disconnected ? "disconnected" : "playing";
+  // Transmissão ao vivo vence o modo espera na tela (ver render abaixo) e segue tocando direto do
+  // YouTube mesmo sem contato com o servidor — então com ela no ar a TV está "playing".
+  beaconStatusRef.current = state.liveStream
+    ? "playing"
+    : state.offline
+      ? "standby"
+      : disconnected
+        ? "disconnected"
+        : "playing";
 
   // "Qual item toca agora" — reportado pelo PlaylistLayer via NowPlayingContext. Dedupe pra não
   // re-renderizar toda vez que o layer reemite o mesmo valor.
@@ -400,14 +409,24 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           // pra o blur não revelar borda transparente.
           "@keyframes broadcast-blur-drift { from { transform: scale(1.08) translate(-1.5%, -1%); } to { transform: scale(1.14) translate(1.5%, 1%); } }"}
       </style>
-      {/* Palco de composição: largura de referência FIXA (OUTPUT_STAGE_WIDTH_PX) + altura na
+      {/* Transmissão ao vivo (v1.9.11) — entra NO LUGAR do palco inteiro (não é overlay): com ela
+          no ar a cena/playlist nem é montada, então nenhum vídeo da playlist toca (nem com som)
+          por baixo, e ao tirar a transmissão o palco monta de novo já no ponto atual do cursor de
+          sync do grupo. Vence o modo espera e o horário de funcionamento (foi posta de propósito
+          pelo admin, e só sai quando alguém tirar); só o takeover de urgência passa por cima —
+          e enquanto ele está ativo a transmissão é desmontada, pro som dela não competir com o
+          comunicado (volta sozinha quando o takeover expira). */}
+      {state.liveStream ? (
+        !takeoverActive && <LiveStreamScreen videoId={state.liveStream.videoId} title={state.liveStream.title} />
+      ) : (
+      /* Palco de composição: largura de referência FIXA (OUTPUT_STAGE_WIDTH_PX) + altura na
           proporção do viewport, escalado uniformemente pro tamanho real da tela via
           `transform: scale` — ver shared/output-stage.ts. Toda a régua interna (%, px, classes
           Tailwind de layer-renderer.tsx) é relativa a este palco, então 720p / 1080p / 4K
           renderizam o MESMO layout, só escalado. `flex flex-col` (antes no root fixed) vive aqui
           agora: a região de camadas e o AlertBanner se empilham DENTRO do palco. `origin-top-left`
           + palco cobrindo exatamente o viewport = o #333 do fundo só apareceria em arredondamento
-          sub-pixel. */}
+          sub-pixel. */
       <div
         className="absolute top-0 left-0 flex flex-col overflow-hidden"
         style={{
@@ -474,6 +493,7 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           <StandbyScreen reason="disconnected" brandLogoUrl={state.brandLogoUrl} />
         )}
       </div>
+      )}
       {/* Takeover de urgência — FORA do palco escalado, cobre o viewport inteiro por cima de tudo
           (conteúdo, modo espera, desconexão). Highest z. */}
       {takeoverActive && (
@@ -483,6 +503,27 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
     </FreezeContext.Provider>
     </SyncContext.Provider>
     </NowPlayingContext.Provider>
+  );
+}
+
+// Transmissão ao vivo do YouTube em tela cheia, com som. A TV consome o YouTube direto (o servidor
+// só entrega o id validado). Som: mute=0 no embed + allow="autoplay" — só toca com áudio no
+// navegador de TV configurado com --autoplay-policy=no-user-gesture-required (mesma exigência dos
+// vídeos "Tocar áudio na TV", ver routes/setup/page.tsx). SEM referrerPolicy="no-referrer" de
+// propósito (diferente do iframe de Página Web): o player do YouTube recusa tocar sem Referer
+// ("erro de configuração do player"). key={videoId}: troca de transmissão remonta o iframe; refetch
+// de estado com o mesmo id reaproveita o mesmo iframe, sem recarregar a transmissão.
+function LiveStreamScreen({ videoId, title }: { videoId: string; title: string | null }) {
+  return (
+    <div className="absolute inset-0 overflow-hidden" style={{ background: "#000000" }}>
+      <iframe
+        key={videoId}
+        src={youTubeEmbedUrl(videoId)}
+        title={title ?? "Transmissão ao vivo"}
+        className="h-full w-full border-0"
+        allow="autoplay; encrypted-media; picture-in-picture"
+      />
+    </div>
   );
 }
 

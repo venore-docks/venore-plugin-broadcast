@@ -66,6 +66,8 @@ import {
   setOutputPlaylistSchedule,
   setOutputTicker,
   setPlaylistEditors,
+  startLiveStream,
+  stopLiveStream,
   togglePlaylistItemVisibility,
   updateAgenda,
   updateAgendaEvent,
@@ -1020,6 +1022,35 @@ export async function clearTakeoverAction(): Promise<BroadcastActionState> {
 
   const result = await clearTakeover();
   if (!result.success) return { error: result.error.message };
+  return { error: null };
+}
+
+// Transmissão ao vivo do YouTube (v1.9.11). outputIds vem de vários checkboxes com o mesmo name.
+// revalidatePath (diferente do takeover): a lista de transmissões no ar do Dashboard muda.
+export async function startLiveStreamAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await startLiveStream({
+    url: requireString(formData, "url"),
+    outputIds: formData.getAll("outputIds").map(String).filter(Boolean),
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// outputId vazio = encerra a transmissão em todas as telas; preenchido = tira só essa tela dela.
+export async function stopLiveStreamAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await stopLiveStream({
+    liveStreamId: requireString(formData, "liveStreamId"),
+    outputId: requireString(formData, "outputId") || null,
+  });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
   return { error: null };
 }
 

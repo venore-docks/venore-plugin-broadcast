@@ -60,6 +60,10 @@ export type BroadcastOutputState = {
   takeoverMessage: string | null;
   takeoverMediaUrl: string | null;
   takeoverExpiresAt: string | null;
+  // Transmissão ao vivo do YouTube (v1.9.11) — quando preenchido, a view mostra a transmissão em
+  // tela cheia, com som, NO LUGAR do conteúdo (playlist/cena não são montadas — nada tocando por
+  // baixo). Só o takeover de urgência fica por cima. null = conteúdo normal.
+  liveStream: { videoId: string; title: string | null } | null;
   brandLogoUrl: string | null;
   // Cor da barra de marca (logo+relógio+temperatura) no rodapé da camada "video" — sempre um hex
   // válido (default de BROADCAST_SETTINGS.brandColor quando o operador não configurou nada).

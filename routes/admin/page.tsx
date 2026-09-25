@@ -20,6 +20,7 @@ import {
   listAgendaEvents,
   listAgendaOutputs,
   listAgendas,
+  listLiveStreams,
   listOutputEditors,
   listOutputPlaylistSchedules,
   listOutputs,
@@ -110,6 +111,7 @@ export default async function BroadcastAdminPage() {
     contentChangeLog,
     myContentChanges,
     scheduledAlertsResult,
+    liveStreamsResult,
   ] = await Promise.all([
     // listPlaylists já se auto-restringe por ator dentro do handler (lista inteira pra
     // broadcast.manage/broadcast.outputs.manage, só as atribuídas pra quem só tem
@@ -138,9 +140,12 @@ export default async function BroadcastAdminPage() {
     hasPlaylistsAccess && !hasFullAccess ? getMyContentChangesAction() : Promise.resolve([]),
     // Avisos agendados/recorrentes (v1.9.7) — só quem vê o Dashboard (hasFullAccess) usa.
     hasFullAccess ? listScheduledAlerts() : Promise.resolve(null),
+    // Transmissões ao vivo no ar (v1.9.11) — mesmo gate do Dashboard.
+    hasFullAccess ? listLiveStreams() : Promise.resolve(null),
   ]);
 
   const scheduledAlerts = scheduledAlertsResult?.success ? scheduledAlertsResult.data : [];
+  const liveStreams = liveStreamsResult?.success ? liveStreamsResult.data : [];
 
   const playlists: BroadcastPlaylistRecord[] = playlistsResult?.success ? playlistsResult.data : [];
   const outputs: BroadcastOutputRecord[] = outputsResult?.success ? outputsResult.data : [];
@@ -358,6 +363,13 @@ export default async function BroadcastAdminPage() {
           playlistsInUse={playlistsInUse}
           alertTargets={alertTargets}
           scheduledAlerts={scheduledAlerts}
+          liveStreamOutputs={outputs.map((output) => ({
+            id: output.id,
+            name: output.name,
+            groupName: output.groupName,
+            liveStreamId: output.liveStreamId,
+          }))}
+          liveStreams={liveStreams}
         />
       ),
     },

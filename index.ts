@@ -387,6 +387,15 @@ export { publishTakeoverHandler as publishTakeover } from "./features/takeover/p
 export { clearTakeoverHandler as clearTakeover } from "./features/takeover/clear-takeover/handler";
 export type { PublishTakeoverInput, PublishTakeoverResult } from "./features/takeover/publish-takeover/types";
 export type { ClearTakeoverResult } from "./features/takeover/clear-takeover/types";
+// Transmissão ao vivo do YouTube (v1.9.11) — tela cheia, com som, no lugar da playlist das telas
+// escolhidas, até alguém tirar.
+export { startLiveStreamHandler as startLiveStream } from "./features/live-stream/start-live-stream/handler";
+export { stopLiveStreamHandler as stopLiveStream } from "./features/live-stream/stop-live-stream/handler";
+export { listLiveStreamsHandler as listLiveStreams } from "./features/live-stream/list-live-streams/handler";
+export type { StartLiveStreamInput, StartLiveStreamResult } from "./features/live-stream/start-live-stream/types";
+export type { StopLiveStreamInput, StopLiveStreamResult } from "./features/live-stream/stop-live-stream/types";
+export type { ListLiveStreamsResult } from "./features/live-stream/list-live-streams/types";
+export type { BroadcastLiveStreamRecord, BroadcastLiveStreamSummary } from "./contracts/types";
 
 // Fila de aprovação + log de auditoria de conteúdo (v1.9) — ver features/content-changes/shared/
 // gate.ts pro racional completo. As 9 mutações acima (update/delete/reorder/toggle-visibility de

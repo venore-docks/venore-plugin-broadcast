@@ -262,8 +262,25 @@ export type BroadcastOutputRecord = {
   cardColor: string | null;
   // "Congelar" — a playlist para de avançar (item atual fixo) sem ir pra tela de espera.
   frozen: boolean;
+  // Transmissão ao vivo que a tela mostra no lugar da playlist (v1.9.11) — null = conteúdo normal.
+  liveStreamId: string | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+// Transmissão ao vivo do YouTube (v1.9.11, ver database/schema/index.ts) — tela cheia, com som, no
+// lugar da playlist, até alguém tirar. videoId é sempre o id validado (shared/youtube.ts).
+export type BroadcastLiveStreamRecord = {
+  id: string;
+  videoId: string;
+  sourceUrl: string;
+  title: string | null;
+  createdAt: Date;
+};
+
+// Visão do admin: a transmissão + as telas onde ela está no ar agora.
+export type BroadcastLiveStreamSummary = BroadcastLiveStreamRecord & {
+  outputs: { id: string; name: string }[];
 };
 
 // Forma resolvida de um item de playlist exposta pra renderização client-side (view de saída) —
@@ -340,6 +357,8 @@ export type BroadcastOutputEvent =
   | { type: "frozen-changed"; frozen: boolean }
   | { type: "alert-changed" }
   | { type: "takeover-changed" }
+  // Transmissão ao vivo entrou/saiu desta tela — mesmo tratamento genérico "!= state → rebuscar".
+  | { type: "live-stream-changed" }
   | { type: "playlist-changed" }
   // "algo na config desta saída mudou, rebusque o estado" — genérico (fallback, horário de
   // funcionamento). O cliente já refaz o fetch em qualquer evento != "state".

@@ -30,6 +30,7 @@ import {
   findAllUpcomingAgendaEvents,
   findActiveTakeover,
   findLayersBySceneId,
+  findLiveStreamById,
   findOutputByToken,
   findPlaylistScheduleForOutput,
   findSceneById,
@@ -364,6 +365,10 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const takeover = await findActiveTakeover({ id: output.id, groupName: output.groupName });
   const takeoverMediaUrl = takeover?.mediaAssetId ? await resolveMediaAssetUrl(takeover.mediaAssetId) : null;
 
+  // Transmissão ao vivo (v1.9.11) — no lugar da playlist enquanto a tela apontar pra ela. Só o id
+  // validado vai pra TV; o embed é montado lá (shared/youtube.ts).
+  const liveStream = output.liveStreamId ? await findLiveStreamById(output.liveStreamId) : null;
+
   const resolvedAssetUrlByLayerId: Record<string, string> = {};
   for (const layer of layers) {
     if (layer.type !== "image") continue;
@@ -430,6 +435,7 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       takeoverMessage: takeover?.message ?? null,
       takeoverMediaUrl,
       takeoverExpiresAt: takeover ? takeover.expiresAt.toISOString() : null,
+      liveStream,
       scene,
       layers,
       playlistItemsByPlaylistId,

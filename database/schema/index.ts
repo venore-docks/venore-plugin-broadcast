@@ -284,6 +284,23 @@ export const broadcastScheduledAlerts = broadcastSchema.table("scheduled_alerts"
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Transmissão ao vivo do YouTube (v1.9.11) — entra NO LUGAR da playlist, em tela cheia e com som,
+// nas telas escolhidas, até alguém tirar (sem duração/expiração, ao contrário de alerta/takeover).
+// Quais telas: outputs.live_stream_id aponta pra cá — uma transmissão pode estar em várias telas, e
+// telas diferentes podem estar em transmissões diferentes ao mesmo tempo. Linha sem nenhuma tela
+// apontando é apagada na hora (ver features/live-stream/*/store.ts), então "existe aqui" = "está no
+// ar em pelo menos uma tela". Cada TV consome o YouTube direto (iframe de youtube.com/embed/<id>),
+// nada passa pelo servidor além do id. video_id é sempre o id validado (shared/youtube.ts), nunca a
+// URL crua — é ele que vira o src do iframe; source_url é só pra mostrar no admin.
+export const broadcastLiveStreams = broadcastSchema.table("live_streams", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  videoId: text("video_id").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  // Título via oEmbed do YouTube no momento de iniciar — best-effort, null se a consulta falhar.
+  title: text("title"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Uma linha por "saída" (URL exibida na TV). token é o único mecanismo de acesso à view de saída
 // (sem sessão/RBAC — ver contracts/types.ts) — gerado em create-output/store.ts como um slug do
 // nome (curto, fácil de digitar num controle remoto de TV), não mais um UUID; o $defaultFn aqui é
@@ -372,6 +389,9 @@ export const broadcastOutputs = broadcastSchema.table(
     // espera. Pra deixar um slide/aviso fixo no ar. O cliente lê via get-output-state + evento
     // "frozen-changed"; o PlaylistLayer desliga o timer e o onEnded enquanto frozen=true.
     frozen: boolean("frozen").notNull().default(false),
+    // Transmissão ao vivo que esta tela está mostrando no lugar da playlist (ver
+    // broadcastLiveStreams). null = conteúdo normal. set null se a transmissão for apagada.
+    liveStreamId: text("live_stream_id").references(() => broadcastLiveStreams.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

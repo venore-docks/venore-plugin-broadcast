@@ -6,6 +6,7 @@ import {
   broadcastAgendas,
   broadcastAlerts,
   broadcastLayers,
+  broadcastLiveStreams,
   broadcastOutputAgendas,
   broadcastOutputPlaylistSchedule,
   broadcastOutputs,
@@ -215,6 +216,15 @@ export async function findActiveTakeover(output: {
     .from(broadcastTakeover)
     .where(and(gt(broadcastTakeover.expiresAt, new Date()), targetMatches(broadcastTakeover.target, output)))
     .orderBy(desc(broadcastTakeover.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function findLiveStreamById(id: string): Promise<{ videoId: string; title: string | null } | null> {
+  const [row] = await db
+    .select({ videoId: broadcastLiveStreams.videoId, title: broadcastLiveStreams.title })
+    .from(broadcastLiveStreams)
+    .where(eq(broadcastLiveStreams.id, id))
     .limit(1);
   return row ?? null;
 }

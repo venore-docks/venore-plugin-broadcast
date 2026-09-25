@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState, type ReactNode, type RefObject } from "react";
-import { CalendarClock, CalendarDays, ExternalLink, ListVideo, Siren, Tv } from "lucide-react";
+import { CalendarClock, CalendarDays, ExternalLink, ListVideo, Radio, Siren, Tv, X } from "lucide-react";
 import { Button } from "@venore/plugin-sdk/ui";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@venore/plugin-sdk/ui";
 import { Input } from "@venore/plugin-sdk/ui";
@@ -10,7 +10,8 @@ import { Switch } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { PlaybackReportPanel } from "./playlists-section";
 import { DAY_LABELS, minutesToTimeLabel } from "../../shared/playlist-schedule";
-import type { BroadcastScheduledAlertRecord } from "../../index";
+import type { BroadcastLiveStreamSummary, BroadcastScheduledAlertRecord } from "../../index";
+import { youTubeThumbnailUrl, youTubeWatchUrl } from "../../shared/youtube";
 import {
   clearAlertAction,
   clearTakeoverAction,
@@ -18,6 +19,8 @@ import {
   deleteScheduledAlertAction,
   publishAlertAction,
   publishTakeoverAction,
+  startLiveStreamAction,
+  stopLiveStreamAction,
   toggleScheduledAlertAction,
   type BroadcastActionState,
 } from "./actions";
@@ -247,6 +250,190 @@ function TakeoverPanel({ targets }: { targets: AlertTargets }) {
   );
 }
 
+export type LiveStreamOutputOption = { id: string; name: string; groupName: string | null; liveStreamId: string | null };
+
+// Transmissão ao vivo do YouTube (v1.9.11) — escolha livre de telas (não o alvo único "todas/grupo/
+// tela" do aviso): pedido explícito "transmitir para as telas que eu selecionar". Os atalhos de
+// grupo só marcam as telas do grupo nos checkboxes, nada além disso.
+function LiveStreamPanel({
+  outputs,
+  liveStreams,
+}: {
+  outputs: LiveStreamOutputOption[];
+  liveStreams: BroadcastLiveStreamSummary[];
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [state, formAction, pending] = useActionState(startLiveStreamAction, initialState);
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: "Transmissão no ar.",
+    onSuccess: () => {
+      formRef.current?.reset();
+      setSelected(new Set());
+    },
+  });
+
+  const groups = [...new Set(outputs.map((output) => output.groupName).filter((g): g is string => Boolean(g)))].sort();
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectMany(ids: string[]) {
+    setSelected((current) => new Set([...current, ...ids]));
+  }
+
+  const quickSelectClassName = "rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground ui-motion-base hover:bg-muted";
+
+  return (
+    <div className="space-y-3 rounded-panel border border-border bg-card p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <Radio className="size-4 text-destructive" aria-hidden="true" /> Transmissão ao vivo (YouTube)
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Entra no lugar da playlist, em tela cheia e com som, nas telas que você escolher — até você tirar. Cada tela assiste
+        direto do YouTube. O som só toca se o navegador da TV estiver configurado para permitir áudio automático.
+      </p>
+
+      {outputs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Cadastre uma tela primeiro.</p>
+      ) : (
+        <form ref={formRef} action={formAction} className="space-y-2">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="live-stream-url">Link da transmissão</label>
+            <Input id="live-stream-url" name="url" placeholder="https://www.youtube.com/watch?v=…" required />
+          </div>
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-xs text-muted-foreground">Telas:</span>
+              <button type="button" className={quickSelectClassName} onClick={() => selectMany(outputs.map((output) => output.id))}>
+                Todas
+              </button>
+              {groups.map((group) => (
+                <button
+                  key={group}
+                  type="button"
+                  className={quickSelectClassName}
+                  onClick={() => selectMany(outputs.filter((output) => output.groupName === group).map((output) => output.id))}
+                >
+                  Grupo: {group}
+                </button>
+              ))}
+              {selected.size > 0 && (
+                <button type="button" className={quickSelectClassName} onClick={() => setSelected(new Set())}>
+                  Limpar
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
+              {outputs.map((output) => (
+                <label key={output.id} className="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    name="outputIds"
+                    value={output.id}
+                    checked={selected.has(output.id)}
+                    onChange={() => toggle(output.id)}
+                    className="size-4 shrink-0 rounded border-border"
+                  />
+                  <span className="min-w-0 truncate">{output.name}</span>
+                  {output.liveStreamId && (
+                    <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 text-xs font-semibold uppercase text-destructive">
+                      Ao vivo
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          </div>
+          <Button type="submit" size="sm" disabled={pending || selected.size === 0}>
+            {selected.size === 0
+              ? "Escolha as telas"
+              : `Transmitir em ${selected.size} ${selected.size === 1 ? "tela" : "telas"}`}
+          </Button>
+        </form>
+      )}
+
+      {liveStreams.length > 0 && (
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-medium text-muted-foreground">No ar agora</p>
+          {liveStreams.map((stream) => (
+            <LiveStreamRow key={stream.id} stream={stream} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiveStreamRow({ stream }: { stream: BroadcastLiveStreamSummary }) {
+  return (
+    <div className="flex flex-wrap items-start gap-3 rounded-md border border-border p-2">
+      {/* eslint-disable-next-line @next/next/no-img-element -- miniatura servida direto pelo YouTube, sem next/image */}
+      <img src={youTubeThumbnailUrl(stream.videoId)} alt="" className="aspect-video w-28 shrink-0 rounded-sm object-cover" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <a
+          href={youTubeWatchUrl(stream.videoId)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-sm font-medium text-foreground hover:underline"
+        >
+          <span className="truncate">{stream.title ?? stream.sourceUrl}</span>
+          <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </a>
+        <div className="flex flex-wrap gap-1">
+          {stream.outputs.map((output) => (
+            <span key={output.id} className="flex items-center gap-1 rounded-full bg-muted py-0.5 pl-2 pr-0.5 text-xs text-foreground">
+              {output.name}
+              <StopLiveStreamButton liveStreamId={stream.id} outputId={output.id} label={`Tirar ${output.name} da transmissão`} />
+            </span>
+          ))}
+        </div>
+      </div>
+      <StopLiveStreamButton liveStreamId={stream.id} outputId={null} label="Encerrar em todas" />
+    </div>
+  );
+}
+
+// outputId null = encerra a transmissão inteira; preenchido = vira o "×" de um chip de tela.
+function StopLiveStreamButton({ liveStreamId, outputId, label }: { liveStreamId: string; outputId: string | null; label: string }) {
+  const [state, formAction, pending] = useActionState(stopLiveStreamAction, initialState);
+  useActionToast({
+    pending,
+    error: state.error,
+    successMessage: outputId ? "Tela voltou para a playlist." : "Transmissão encerrada.",
+  });
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="liveStreamId" value={liveStreamId} />
+      <input type="hidden" name="outputId" value={outputId ?? ""} />
+      {outputId ? (
+        <button
+          type="submit"
+          disabled={pending}
+          aria-label={label}
+          title={label}
+          className="flex size-5 items-center justify-center rounded-full text-muted-foreground ui-motion-base hover:bg-background hover:text-foreground"
+        >
+          <X className="size-3" aria-hidden="true" />
+        </button>
+      ) : (
+        <Button type="submit" variant="outline" size="sm" disabled={pending}>
+          {label}
+        </Button>
+      )}
+    </form>
+  );
+}
+
 // Avisos AGENDADOS/RECORRENTES (backlog item 6) — mesma mensagem/alvo do aviso rápido, mas dentro
 // de uma janela dia-da-semana+horário que se repete sozinha (reaproveita o horário de
 // funcionamento já usado em telas — DAY_LABELS/minutesToTimeLabel, shared/playlist-schedule.ts).
@@ -472,6 +659,8 @@ export function DashboardSection({
   playlistsInUse,
   alertTargets,
   scheduledAlerts,
+  liveStreamOutputs,
+  liveStreams,
 }: {
   outputsCount: number;
   playlistsCount: number;
@@ -479,6 +668,8 @@ export function DashboardSection({
   playlistsInUse: PlaylistInUse[];
   alertTargets: AlertTargets;
   scheduledAlerts: BroadcastScheduledAlertRecord[];
+  liveStreamOutputs: LiveStreamOutputOption[];
+  liveStreams: BroadcastLiveStreamSummary[];
 }) {
   return (
     <div className="space-y-4">
@@ -490,6 +681,7 @@ export function DashboardSection({
       <QuickAlertPanel targets={alertTargets} />
       <ScheduledAlertsPanel targets={alertTargets} scheduledAlerts={scheduledAlerts} />
       <TakeoverPanel targets={alertTargets} />
+      <LiveStreamPanel outputs={liveStreamOutputs} liveStreams={liveStreams} />
       <PlaylistsInUsePanel playlists={playlistsInUse} />
       <PlaybackReportPanel />
     </div>
