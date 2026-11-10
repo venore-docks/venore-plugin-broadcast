@@ -7,6 +7,8 @@ export type UpdateAgendaCommand = {
   displaySeconds: number;
   backgroundColor?: string | null;
   logoMediaAssetId?: string | null;
+  // Slug de um setor do plugin Calendários — a agenda passa a mostrar os eventos dele. Vazio/null = agenda comum.
+  calendariosSectorSlug?: string | null;
   actorId: string;
 };
 

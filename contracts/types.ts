@@ -114,6 +114,8 @@ export type BroadcastAgendaRecord = {
   // Logo própria da agenda (id cru — resolução de URL só em get-output-state, via getMediaAsset).
   // null cai na logo padrão da plataforma (brandLogoUrl).
   logoMediaAssetId: string | null;
+  // Slug do setor do plugin Calendários que alimenta esta agenda (ver o schema). null = agenda comum.
+  calendariosSectorSlug: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -208,7 +210,8 @@ export type BroadcastScheduledAlertRecord = {
 // mesmo racional de PlaylistItemSummary: client component de view de saída não resolve mídia
 // sozinho, só recebe a URL pronta. extraDates passa cru (one-off, sem recorrência a resolver);
 // depois do round-trip JSON os Date viram string, e as helpers da view já aceitam string|Date.
-export type AgendaRotationEvent = BroadcastAgendaEventRecord & { coverUrl: string | null };
+// allDay: evento de dia inteiro (sem horário) — vem do Calendários; o card não mostra "00:00".
+export type AgendaRotationEvent = BroadcastAgendaEventRecord & { coverUrl: string | null; allDay?: boolean };
 
 // Um "canal" de agenda com seus próximos eventos e logo já resolvidos — deliberadamente aqui em
 // contracts/, não em features/outputs/get-output-state/types.ts, mesmo racional de

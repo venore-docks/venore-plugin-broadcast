@@ -403,9 +403,9 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           // Item de evento entrando deslizado da DIREITA — usado com animation-delay crescente por
           // item (ver AgendaLayer) pra virar uma cascata em sequência, não os cards inteiros
           // aparecendo juntos. Estilo alternativo ao fade acima (BROADCAST_SETTINGS.agendaAnimationStyle).
-          // Distância grande (64px) + easing com leve overshoot ("ease-emphasis", mesma curva
-          // usada nos temas shadcn do projeto) — pedido explícito: "mais expressiva", não um
-          // deslize discreto.
+          // Distância grande (64px) — pedido explícito: "mais expressiva", não um deslize discreto.
+          // Easing (ease out cubic) e o escalonamento entre cards ficam no "animation" shorthand em
+          // AgendaLayer (layer-renderer.tsx), não aqui — este @keyframes só descreve o deslocamento.
           "@keyframes broadcast-agenda-cascade-item { from { opacity: 0; transform: translateX(64px); } to { opacity: 1; transform: translateX(0); } }" +
           "@keyframes broadcast-alert-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }" +
           "@keyframes broadcast-news-title-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }" +

@@ -56,6 +56,7 @@ import { PlaylistsSection } from "../../components/admin/playlists-section";
 import { OutputsSection } from "../../components/admin/outputs-section";
 import { SettingsSection } from "../../components/admin/settings-section";
 import { AgendaSection } from "../../components/admin/agenda-section";
+import { listCalendariosSectors } from "../../runtime/calendarios-agenda";
 import { ResponsiblesSection } from "../../components/admin/responsibles-section";
 import { ImportExportSection } from "../../components/admin/import-export-section";
 import { DashboardSection } from "../../components/admin/dashboard-section";
@@ -256,8 +257,10 @@ export default async function BroadcastAdminPage() {
       />
     </div>
   );
+  const calendariosSectors = await listCalendariosSectors();
   const agendaView = (
     <AgendaSection
+      calendariosSectors={calendariosSectors}
       agendas={agendas}
       eventsByAgenda={eventsByAgenda}
       agendaLogoMediaById={agendaLogoMediaById}

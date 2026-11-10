@@ -798,6 +798,7 @@ export async function createAgendaAction(_prevState: BroadcastActionState, formD
     displaySeconds: optionalNumber(formData, "displaySeconds") ?? undefined,
     backgroundColor: requireString(formData, "backgroundColor") || undefined,
     logoMediaAssetId: requireString(formData, "logoMediaAssetId") || undefined,
+    calendariosSectorSlug: requireString(formData, "calendariosSectorSlug").replace("__none__", "") || undefined,
   });
   if (!result.success) return { error: result.error.message };
 
@@ -814,6 +815,7 @@ export async function updateAgendaAction(_prevState: BroadcastActionState, formD
     displaySeconds: requireNumber(formData, "displaySeconds", 20),
     backgroundColor: requireString(formData, "backgroundColor") || undefined,
     logoMediaAssetId: requireString(formData, "logoMediaAssetId") || undefined,
+    calendariosSectorSlug: requireString(formData, "calendariosSectorSlug").replace("__none__", "") || undefined,
   });
   if (!result.success) return { error: result.error.message };
 

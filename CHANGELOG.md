@@ -4,6 +4,16 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
+## v1.9.16
+
+- Agenda ligada ao plugin **Calendários** (dependência opcional): no admin da agenda, o campo "Eventos vindos
+  do Calendários" liga a agenda a um setor (ex.: Faculdade Fidelis, Colégio Erasto Gaertner). Os Eventos
+  públicos do setor (título, tema, local e horário, cadastrados no Calendários) aparecem no rodízio e no
+  ticker das TVs vinculadas, sem digitar duas vezes; os eventos cadastrados direto na agenda deixam de
+  entrar no rodízio enquanto ela estiver ligada. Evento de dia inteiro (sem horário) não mostra "00:00".
+  Sem o Calendários instalado, o campo some e nada muda.
+- Migration `0020_agenda_calendarios` (`agendas.calendarios_sector_slug`, nulo por padrão).
+
 ## v1.9.15
 
 - Transmissão ao vivo: autoplay voltou a falhar no Brave depois da v1.9.12 (comandos de legenda

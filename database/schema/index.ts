@@ -187,6 +187,10 @@ export const broadcastAgendas = broadcastSchema.table("agendas", {
   order: integer("order").notNull().default(0),
   backgroundColor: text("background_color"),
   logoMediaAssetId: text("logo_media_asset_id"),
+  // Agenda LIGADA a um setor do plugin Calendários (slug do setor, texto solto — outro plugin, sem FK):
+  // os eventos dela vêm de lá (Eventos públicos do setor), lidos em runtime pelo barrel opcional, e os
+  // eventos próprios desta agenda deixam de entrar no rodízio. null = agenda comum, só com eventos daqui.
+  calendariosSectorSlug: text("calendarios_sector_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

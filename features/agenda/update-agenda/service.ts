@@ -22,6 +22,7 @@ export async function updateAgenda(command: UpdateAgendaCommand): Promise<Update
     displaySeconds: command.displaySeconds,
     backgroundColor: command.backgroundColor?.trim() || null,
     logoMediaAssetId: command.logoMediaAssetId?.trim() || null,
+    calendariosSectorSlug: command.calendariosSectorSlug?.trim() || null,
   });
 
   endOperation(handle, { success: true });

@@ -14,6 +14,8 @@ import { MediaPickerField } from "@venore/plugin-sdk/ui";
 import type { PickableMedia } from "@venore/plugin-sdk/ui";
 import { useActionToast } from "@venore/plugin-sdk/ui";
 import { MasterDetail, useUrlParam, type MasterDetailEntry } from "./master-detail";
+// Só o TIPO do setor (o runtime/calendarios-agenda importa o SDK de servidor — client component não pode).
+import type { CalendariosSector } from "../../runtime/calendarios-agenda";
 // Importa direto de contracts/, nunca do barrel (@/plugins/broadcast) — mesmo racional de
 // outputs-section.tsx.
 import type {
@@ -50,7 +52,36 @@ const DEFAULT_AGENDA_COLOR = "#0f0f0f";
 // campos lado a lado (flex-wrap) quebra em containers estreitos e fica difícil de escanear;
 // empilhado nunca depende da largura disponível pra ficar legível. Feedback direto: "a UX da
 // admin/broadcast Agenda precisa ser alterada, está muito complexa e pouco intuitiva".
-function CreateAgendaForm() {
+const NO_SECTOR = "__none__";
+
+// Liga a agenda a um setor do plugin Calendários: os eventos dela passam a vir de lá (Eventos do setor,
+// com tema, local e horário). Some quando o Calendários não está instalado/ativo.
+function CalendariosSectorField({ sectors, defaultSlug, idPrefix }: { sectors: CalendariosSector[]; defaultSlug: string | null; idPrefix: string }) {
+  if (sectors.length === 0 && !defaultSlug) return null;
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground" htmlFor={`${idPrefix}-sector`}>Eventos vindos do Calendários</label>
+      <Select name="calendariosSectorSlug" defaultValue={defaultSlug ?? NO_SECTOR}>
+        <SelectTrigger id={`${idPrefix}-sector`} className="w-full sm:max-w-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NO_SECTOR}>Não — eventos cadastrados aqui</SelectItem>
+          {sectors.map((sector) => (
+            <SelectItem key={sector.slug} value={sector.slug}>
+              Setor: {sector.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        Ligada a um setor, a agenda mostra os Eventos públicos dele (cadastrados no Calendários, sem digitar duas vezes); os eventos cadastrados aqui deixam de aparecer.
+      </p>
+    </div>
+  );
+}
+
+function CreateAgendaForm({ sectors }: { sectors: CalendariosSector[] }) {
   const [state, formAction, pending] = useActionState(createAgendaAction, initialState);
   useActionToast({ pending, error: state.error, successMessage: "Agenda criada." });
 
@@ -75,13 +106,14 @@ function CreateAgendaForm() {
           className="h-9 w-16 cursor-pointer rounded-md border border-border"
         />
       </div>
+      <CalendariosSectorField sectors={sectors} defaultSlug={null} idPrefix="agenda-new" />
       <MediaPickerField name="logoMediaAssetId" label="Logo da agenda (opcional, senão usa a logo da plataforma)" />
       <Button type="submit" disabled={pending}>Nova agenda</Button>
     </form>
   );
 }
 
-function EditAgendaForm({ agenda, logoMedia }: { agenda: BroadcastAgendaRecord; logoMedia: PickableMedia | null }) {
+function EditAgendaForm({ agenda, logoMedia, sectors }: { agenda: BroadcastAgendaRecord; logoMedia: PickableMedia | null; sectors: CalendariosSector[] }) {
   const [state, formAction, pending] = useActionState(updateAgendaAction, initialState);
   useActionToast({ pending, error: state.error, successMessage: "Agenda atualizada." });
 
@@ -121,6 +153,7 @@ function EditAgendaForm({ agenda, logoMedia }: { agenda: BroadcastAgendaRecord; 
           className="h-9 w-16 cursor-pointer rounded-md border border-border"
         />
       </div>
+      <CalendariosSectorField sectors={sectors} defaultSlug={agenda.calendariosSectorSlug} idPrefix={`${agenda.id}-edit`} />
       <MediaPickerField name="logoMediaAssetId" label="Logo da agenda" initialMedia={logoMedia} />
       <Button type="submit" size="sm" disabled={pending}>Salvar</Button>
     </form>
@@ -802,13 +835,34 @@ function AgendaEventsTab({
   events,
   eventCoverMediaById,
   canManageAll,
+  sectors,
 }: {
   agenda: BroadcastAgendaRecord;
   events: BroadcastAgendaEventRecord[];
   eventCoverMediaById: Record<string, PickableMedia | null>;
   canManageAll: boolean;
+  sectors: CalendariosSector[];
 }) {
   const [addingEvent, setAddingEvent] = useState(false);
+  const linkedSector = agenda.calendariosSectorSlug ? sectors.find((sector) => sector.slug === agenda.calendariosSectorSlug) : null;
+  if (agenda.calendariosSectorSlug) {
+    return (
+      <div className="space-y-2 rounded-panel border border-border bg-muted/20 p-3 text-sm">
+        <p className="font-medium text-foreground">Os eventos desta agenda vêm do Calendários</p>
+        <p className="text-xs text-muted-foreground">
+          {linkedSector
+            ? `Setor: ${linkedSector.name}. Os Eventos públicos do setor (título, tema, local e horário) aparecem na TV automaticamente.`
+            : "O plugin Calendários não está ativo (ou o setor não existe mais) — enquanto isso a agenda fica vazia nas TVs."}
+          {" "}Os eventos cadastrados diretamente nesta agenda deixam de aparecer enquanto ela estiver ligada.
+        </p>
+        {linkedSector && (
+          <a className="text-xs font-medium text-primary underline underline-offset-2" href={`/admin/calendarios/eventos/${linkedSector.id}`}>
+            Cadastrar e editar os eventos do setor
+          </a>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -852,6 +906,7 @@ function AgendaDetail({
   outputs,
   selectedOutputIds,
   canManageAll,
+  sectors,
 }: {
   agenda: BroadcastAgendaRecord;
   events: BroadcastAgendaEventRecord[];
@@ -860,6 +915,7 @@ function AgendaDetail({
   outputs: BroadcastOutputRecord[];
   selectedOutputIds: string[];
   canManageAll: boolean;
+  sectors: CalendariosSector[];
 }) {
   const [tab, setTab] = useUrlParam("ver", "eventos");
   const status = agendaItemStatus(events.length, selectedOutputIds.length);
@@ -903,10 +959,11 @@ function AgendaDetail({
               events={events}
               eventCoverMediaById={eventCoverMediaById}
               canManageAll={canManageAll}
+              sectors={sectors}
             />
           </TabsContent>
           <TabsContent value="config" className="pt-4">
-            <EditAgendaForm agenda={agenda} logoMedia={logoMedia} />
+            <EditAgendaForm agenda={agenda} logoMedia={logoMedia} sectors={sectors} />
           </TabsContent>
           {canManageAll && (
             <TabsContent value="telas" className="pt-4">
@@ -920,7 +977,7 @@ function AgendaDetail({
   );
 }
 
-function CreateAgendaDialog() {
+function CreateAgendaDialog({ sectors }: { sectors: CalendariosSector[] }) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -934,7 +991,7 @@ function CreateAgendaDialog() {
           <DialogTitle>Nova agenda</DialogTitle>
           <DialogDescription>Crie a agenda e depois adicione os eventos e vincule as telas.</DialogDescription>
         </DialogHeader>
-        <CreateAgendaForm />
+        <CreateAgendaForm sectors={sectors} />
       </DialogContent>
     </Dialog>
   );
@@ -990,6 +1047,7 @@ export function AgendaSection({
   outputs,
   agendaOutputIdsByAgendaId,
   canManageAll = true,
+  calendariosSectors = [],
 }: {
   agendas: BroadcastAgendaRecord[];
   eventsByAgenda: Record<string, BroadcastAgendaEventRecord[]>;
@@ -1001,6 +1059,8 @@ export function AgendaSection({
   // agendas especificas, ver page.tsx) - esconde criar/apagar/reordenar agenda e o vinculo
   // agenda-tela, que continuam acao de quem administra tudo.
   canManageAll?: boolean;
+  // Setores do plugin Calendários que podem alimentar uma agenda ([] sem o plugin).
+  calendariosSectors?: CalendariosSector[];
 }) {
   const entries: MasterDetailEntry[] = agendas.map((agenda) => {
     const eventCount = (eventsByAgenda[agenda.id] ?? []).length;
@@ -1030,7 +1090,7 @@ export function AgendaSection({
       toolbar={
         canManageAll ? (
           <div className="flex flex-col gap-2">
-            <CreateAgendaDialog />
+            <CreateAgendaDialog sectors={calendariosSectors} />
             <ReorderAgendasDialog agendas={agendas} />
           </div>
         ) : undefined
@@ -1055,6 +1115,7 @@ export function AgendaSection({
             outputs={outputs}
             selectedOutputIds={agendaOutputIdsByAgendaId[agenda.id] ?? []}
             canManageAll={canManageAll}
+            sectors={calendariosSectors}
           />
         );
       }}

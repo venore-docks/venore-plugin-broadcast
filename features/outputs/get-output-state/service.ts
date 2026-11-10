@@ -3,6 +3,7 @@ import { getMediaAsset } from "@venore/plugin-sdk/media";
 import { getSetting } from "@venore/plugin-sdk/settings";
 import { getBrandConfig } from "@venore/plugin-sdk/brand";
 import { resolveBroadcastNews } from "../../../runtime/blog-news";
+import { resolveCalendariosAgendaEvents } from "../../../runtime/calendarios-agenda";
 import { resolveRegionWeather } from "../../../runtime/region-weather";
 import {
   DEFAULT_AGENDA_EVENT_SLIDE_DURATION_SECONDS,
@@ -187,16 +188,32 @@ async function resolveAgendaRotation(outputId: string, timeZone: string): Promis
     eventsByAgendaId.set(event.agendaId, bucket);
   }
 
-  const relevantAgendas = agendas.filter(
-    (agenda) => (eventsByAgendaId.get(agenda.id)?.length ?? 0) > 0 && agendaIdsAllowedForThisOutput.has(agenda.id),
+  // Agenda LIGADA a um setor do Calendários: os eventos vêm de lá (já resolvidos, na ordem de data) e
+  // os eventos próprios da agenda não entram. Só consulta quando a agenda vai de fato aparecer nesta
+  // saída. Plugin ausente/inativo = vazio (a agenda some do rodízio, a TV não quebra).
+  const linkedEventsByAgendaId = new Map<string, AgendaRotationEvent[]>();
+  await Promise.all(
+    agendas
+      .filter((agenda) => agenda.calendariosSectorSlug && agendaIdsAllowedForThisOutput.has(agenda.id))
+      .map(async (agenda) => {
+        linkedEventsByAgendaId.set(
+          agenda.id,
+          await resolveCalendariosAgendaEvents(agenda.calendariosSectorSlug!, agenda.id, timeZone, AGENDA_EVENTS_PER_ROTATION_LIMIT),
+        );
+      }),
   );
+
+  const eventCountOf = (agenda: (typeof agendas)[number]) =>
+    (agenda.calendariosSectorSlug ? linkedEventsByAgendaId.get(agenda.id)?.length : eventsByAgendaId.get(agenda.id)?.length) ?? 0;
+  const relevantAgendas = agendas.filter((agenda) => eventCountOf(agenda) > 0 && agendaIdsAllowedForThisOutput.has(agenda.id));
 
   return Promise.all(
     relevantAgendas.map(async (agenda) => {
-      const rawEvents = eventsByAgendaId.get(agenda.id) ?? [];
       const [logoUrl, resolvedEvents] = await Promise.all([
         resolveMediaAssetUrl(agenda.logoMediaAssetId),
-        Promise.all(rawEvents.map((event) => resolveAgendaRotationEvent(event, timeZone))),
+        agenda.calendariosSectorSlug
+          ? Promise.resolve(linkedEventsByAgendaId.get(agenda.id) ?? [])
+          : Promise.all((eventsByAgendaId.get(agenda.id) ?? []).map((event) => resolveAgendaRotationEvent(event, timeZone))),
       ]);
       return { agenda, events: resolvedEvents, logoUrl };
     }),

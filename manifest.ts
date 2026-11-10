@@ -23,7 +23,13 @@ export const broadcastManifest: PluginManifest = {
   // colar a URL da TV à mão. Sem ele, o atalho some da UI e o operador continua usando o item
   // "webpage" com a URL /company-metrics/tv/{token}. broadcast NUNCA depende de company-metrics
   // pra funcionar — por isso `type: "optional"` + isPluginActive em runtime.
-  dependencies: [{ pluginKey: "company-metrics", type: "optional" }],
+  // Dependência OPCIONAL de calendarios (Calendários): uma agenda pode ser ligada a um setor de lá e passa a
+  // mostrar os Eventos públicos dele (tema, local, horário) nas TVs, sem digitar duas vezes (runtime/
+  // calendarios-agenda.ts). Sem o plugin, o seletor some e a agenda ligada fica vazia — nunca quebra.
+  dependencies: [
+    { pluginKey: "company-metrics", type: "optional" },
+    { pluginKey: "calendarios", type: "optional" },
+  ],
   // Schema próprio do plugin — aplicado no install (run-plugin-migrations.ts), não no
   // vercel-build. Default de migrationsSchema ("broadcast_migrations") já bate com
   // src/plugins/broadcast/drizzle.config.ts.

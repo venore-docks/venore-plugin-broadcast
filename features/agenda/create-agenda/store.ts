@@ -14,6 +14,7 @@ export async function insertAgenda(input: {
   order: number;
   backgroundColor: string | null;
   logoMediaAssetId: string | null;
+  calendariosSectorSlug: string | null;
 }): Promise<BroadcastAgendaRecord> {
   const [row] = await db.insert(broadcastAgendas).values(input).returning();
   return row as BroadcastAgendaRecord;

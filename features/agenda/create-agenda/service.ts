@@ -16,6 +16,7 @@ export async function createAgenda(command: CreateAgendaCommand): Promise<Create
     order: nextOrder,
     backgroundColor: command.backgroundColor?.trim() || null,
     logoMediaAssetId: command.logoMediaAssetId?.trim() || null,
+    calendariosSectorSlug: command.calendariosSectorSlug?.trim() || null,
   });
 
   endOperation(handle, { success: true });

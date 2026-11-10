@@ -1,0 +1,1 @@
+ALTER TABLE "broadcast"."agendas" ADD COLUMN "calendarios_sector_slug" text;

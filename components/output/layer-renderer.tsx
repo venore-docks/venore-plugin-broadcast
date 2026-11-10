@@ -1202,7 +1202,7 @@ function FeaturedAgendaEventSlide({
   const occurrences = eventOccurrences(event);
   const hasExtraDates = occurrences.length > 1;
   const displayOccurrence = hasExtraDates ? nextFutureOccurrence(event, now ?? new Date()) : occurrences[0];
-  const { day, month, weekday, time } = formatEventDay(displayOccurrence.startAt, timeZone);
+  const { day, month, weekday, time } = formatEventDay(displayOccurrence.startAt, timeZone, event.allDay);
   const today = occurrences.some((occurrence) => isSameDay(occurrence.startAt, timeZone));
   // "Acontecendo agora" — pedido explícito: "quando o evento começar, coloque o status
   // 'acontecendo', e destaque as cores". Prevalece sobre "Hoje"/"Agenda" quando true (ver o badge
@@ -1210,7 +1210,7 @@ function FeaturedAgendaEventSlide({
   // visualmente distinto dos outros dois estados.
   const happeningNow =
     now !== null && occurrences.some((occurrence) => isEventHappeningNow(occurrence.startAt, occurrence.endAt, now));
-  const weekdayAndTime = `${weekday} • ${time}${formatEndTimeSuffix(displayOccurrence.startAt, displayOccurrence.endAt, timeZone)}`;
+  const weekdayAndTime = joinWeekdayTime(weekday, time, formatEndTimeSuffix(displayOccurrence.startAt, displayOccurrence.endAt, timeZone, event.allDay));
   const hasCover = Boolean(event.coverUrl);
 
   // Badge "Acontecendo"/"Hoje"/"Agenda" — mesma regra visual do card da gaveta lateral
@@ -1302,7 +1302,7 @@ function FeaturedAgendaEventSlide({
                   style={{ color: TV_ACCENT_COLOR }}
                 >
                   <Clock className="size-10 shrink-0" aria-hidden />
-                  {formatOccurrenceLine(occurrence, timeZone)}
+                  {formatOccurrenceLine(occurrence, timeZone, event.allDay)}
                 </span>
               ))}
             </div>
@@ -1368,14 +1368,23 @@ function NewsLayer({ articles }: { articles: RegionNewsArticle[] }) {
 // ficar óbvio de bater o olho, sem precisar calcular o dia da semana a partir do número).
 // timeZone (fuso da instituição, vindo de get-output-state) aplicado a TODA formatação — a TV
 // pode estar num fuso diferente do da sede, mas o card mostra sempre a parede da sede.
-function formatEventDay(startAt: string | Date, timeZone: string): { day: string; month: string; weekday: string; time: string } {
+function formatEventDay(
+  startAt: string | Date,
+  timeZone: string,
+  allDay = false,
+): { day: string; month: string; weekday: string; time: string } {
   const date = typeof startAt === "string" ? new Date(startAt) : startAt;
   return {
     day: date.toLocaleDateString("pt-BR", { day: "2-digit", timeZone }),
     month: date.toLocaleDateString("pt-BR", { month: "short", timeZone }).replace(".", ""),
     weekday: date.toLocaleDateString("pt-BR", { weekday: "short", timeZone }).replace(".", ""),
-    time: date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone }),
+    time: allDay ? "" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone }),
   };
+}
+
+// "qua • 19:30–21:00"; evento de dia inteiro (sem horário) fica só "qua" (+ " – 06/03" se durar dias).
+function joinWeekdayTime(weekday: string, time: string, suffix: string): string {
+  return time ? `${weekday} • ${time}${suffix}` : `${weekday}${suffix}`;
 }
 
 // "" quando não tem término definido. endAt agora é um timestamp completo (pode cair em qualquer
@@ -1386,10 +1395,15 @@ function formatEventDay(startAt: string | Date, timeZone: string): { day: string
 // antes do início por engano. Mesmo racional de formatEndTimeSuffix no admin (agenda-section.tsx).
 // startAt/endAt chegam como string depois de um round-trip JSON (fetch/SSE não revivem Date
 // automaticamente) — mesmo racional de formatEventDay aceitar "string | Date".
-function formatEndTimeSuffix(startAt: string | Date, endAt: string | Date | null, timeZone: string): string {
+function formatEndTimeSuffix(startAt: string | Date, endAt: string | Date | null, timeZone: string, allDay = false): string {
   if (!endAt) return "";
   const start = typeof startAt === "string" ? new Date(startAt) : startAt;
   const end = typeof endAt === "string" ? new Date(endAt) : endAt;
+  // Dia inteiro: sem horário de término; vários dias mostram só a data final.
+  if (allDay) {
+    if (isSameZonedCalendarDay(start, end, timeZone)) return "";
+    return ` – ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone })}`;
+  }
   const endTime = end.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone });
   // "mesmo dia" comparado NO fuso da instituição — um evento overnight ("22:00–02:00") não pode
   // parecer que termina antes de começar só porque a virada de dia cai num fuso diferente.
@@ -1434,9 +1448,9 @@ function nextFutureOccurrence(event: AgendaRotationEvent, now: Date): EventOccur
 }
 
 // "12 set • qua 14:00–15:30" — uma linha por data quando o evento tem datas avulsas.
-function formatOccurrenceLine(occurrence: EventOccurrence, timeZone: string): string {
-  const { day, month, weekday, time } = formatEventDay(occurrence.startAt, timeZone);
-  return `${day} ${month} • ${weekday} ${time}${formatEndTimeSuffix(occurrence.startAt, occurrence.endAt, timeZone)}`;
+function formatOccurrenceLine(occurrence: EventOccurrence, timeZone: string, allDay = false): string {
+  const { day, month, weekday, time } = formatEventDay(occurrence.startAt, timeZone, allDay);
+  return `${day} ${month} • ${weekday}${time ? ` ${time}` : ""}${formatEndTimeSuffix(occurrence.startAt, occurrence.endAt, timeZone, allDay)}`;
 }
 
 
@@ -1572,7 +1586,7 @@ function AgendaLayer({
               const occurrences = eventOccurrences(event);
               const hasExtraDates = occurrences.length > 1;
               const displayOccurrence = hasExtraDates ? nextFutureOccurrence(event, now ?? new Date()) : occurrences[0];
-              const { day, month, weekday, time: eventTime } = formatEventDay(displayOccurrence.startAt, timeZone);
+              const { day, month, weekday, time: eventTime } = formatEventDay(displayOccurrence.startAt, timeZone, event.allDay);
               const today = occurrences.some((occurrence) => isSameDay(occurrence.startAt, timeZone));
               // "Acontecendo agora" — mesmo racional/helper de FeaturedAgendaEventSlide (pedido
               // explícito: "quando o evento começar, coloque o status 'acontecendo', e destaque
@@ -1583,17 +1597,30 @@ function AgendaLayer({
               // "seg • 14:00" — pedido explícito: eventos recorrentes toda semana ficam óbvios de
               // bater o olho ("toda seg") sem precisar calcular a partir do número do dia. Com
               // horário de término opcional, vira "seg • 14:00–15:30".
-              const weekdayAndTime = `${weekday} • ${eventTime}${formatEndTimeSuffix(displayOccurrence.startAt, displayOccurrence.endAt, timeZone)}`;
-              // 120ms entre cada card (mais espaçado que a primeira versão, pedido explícito: "mais
-              // expressiva") — devagar o bastante pra cada entrada da direita ser individualmente
+              const weekdayAndTime = joinWeekdayTime(
+                weekday,
+                eventTime,
+                formatEndTimeSuffix(displayOccurrence.startAt, displayOccurrence.endAt, timeZone, event.allDay),
+              );
+              // 160ms entre cada card (era 120ms — curto demais pro card anterior terminar de ser
+              // percebido antes do próximo começar, lia como uma rajada de pops simultâneos em vez
+              // de cascata) — devagar o bastante pra cada entrada da direita ser individualmente
               // percebida, não só um blur de movimento. Delay base de AGENDA_ENTRY_ANIMATION_DELAY_MS
               // (mesmo racional do bloco "fade" acima) soma-se ao escalonamento por card — a
               // cascata só começa depois que o drawer termina de abrir.
+              //
+              // Curva trocada de cubic-bezier(0.16, 1, 0.3, 1) ("expo out", concentra quase todo o
+              // deslocamento visual nos primeiros ~30% da duração) pra cubic-bezier(0.33, 1, 0.68, 1)
+              // ("ease out cubic") — pedido explícito: "entrada de cada card está abrupta". Com a
+              // curva expo, cada card já chegava quase na posição final assim que seu delay
+              // começava, então virava um "pop" seguido de um arrasto quase imperceptível no final —
+              // a nova curva distribui o movimento de forma mais linear ao longo dos 600ms, dando
+              // tempo real de ver o card deslizar da direita.
               const cascadeStyle: React.CSSProperties | undefined =
                 animationStyle === "cascade"
                   ? {
-                      animation: "broadcast-agenda-cascade-item 600ms cubic-bezier(0.16, 1, 0.3, 1) both",
-                      animationDelay: `${AGENDA_ENTRY_ANIMATION_DELAY_MS + eventIndex * 120}ms`,
+                      animation: "broadcast-agenda-cascade-item 600ms cubic-bezier(0.33, 1, 0.68, 1) both",
+                      animationDelay: `${AGENDA_ENTRY_ANIMATION_DELAY_MS + eventIndex * 160}ms`,
                     }
                   : undefined;
 
@@ -1656,7 +1683,7 @@ function AgendaLayer({
                       {hasExtraDates ? (
                         <span className="flex flex-col gap-0.5">
                           {occurrences.map((occurrence, occurrenceIndex) => (
-                            <span key={occurrenceIndex}>{formatOccurrenceLine(occurrence, timeZone)}</span>
+                            <span key={occurrenceIndex}>{formatOccurrenceLine(occurrence, timeZone, event.allDay)}</span>
                           ))}
                         </span>
                       ) : (
@@ -1831,8 +1858,8 @@ function AgendaTickerInline({
   if (!currentAgenda || !currentEvent) return null;
 
   // Com datas avulsas, mostra a próxima data futura entre todas (não a primária crua).
-  const { weekday, time } = formatEventDay(nextFutureOccurrence(currentEvent, new Date()).startAt, timeZone);
-  const parts = [currentAgenda.agenda.name, currentEvent.title, `${weekday} • ${time}`, currentEvent.location].filter(
+  const { weekday, time } = formatEventDay(nextFutureOccurrence(currentEvent, new Date()).startAt, timeZone, currentEvent.allDay);
+  const parts = [currentAgenda.agenda.name, currentEvent.title, joinWeekdayTime(weekday, time, ""), currentEvent.location].filter(
     (part): part is string => Boolean(part),
   );
 
