@@ -38,6 +38,16 @@ import { SortableList } from "./sortable-list";
 // Importa direto de contracts/ e shared/, nunca do barrel (@/plugins/broadcast) — mesmo racional
 // de outputs-section.tsx/layer-renderer.tsx: este é um "use client" component, e o barrel arrasta
 // handlers server-only pro bundle do browser.
+import {
+  SLIDESHOW_MOTIONS,
+  SLIDESHOW_MOTION_LABELS,
+  SLIDESHOW_MOTION_STRENGTHS,
+  SLIDESHOW_MOTION_STRENGTH_LABELS,
+  SLIDESHOW_TRANSITIONS,
+  SLIDESHOW_TRANSITION_LABELS,
+  SLIDESHOW_TRANSITION_MAX_MS,
+  SLIDESHOW_TRANSITION_MIN_MS,
+} from "../../shared/slideshow";
 import { streamableContentTypeForExtension } from "../../shared/video-extensions";
 import { resolveEventOccurrenceDate } from "../../shared/weekly-recurrence";
 import type {
@@ -65,6 +75,7 @@ import {
   rebaselineLocalItemIntegrityAction,
   reorderPlaylistItemsAction,
   scanPlaylistFolderAction,
+  setPlaylistSlideshowAction,
   togglePlaylistItemVisibilityAction,
   updatePlaylistItemAction,
   verifyLocalItemsIntegrityAction,
@@ -1385,6 +1396,98 @@ export function PlaylistAddSection({
   );
 }
 
+// Estilo do slideshow de imagens da playlist (v1.10): movimento sutil (zoom/pan, estilo Ken Burns)
+// + efeito de transição entre uma imagem e a próxima. Vale pra TODAS as imagens da playlist; vídeo
+// e demais itens não mudam. Aparência, não conteúdo — aplica na hora, sem fila de aprovação.
+// Campos não-controlados (defaultValue) + key pelos valores salvos: depois de salvar, o servidor
+// devolve a playlist atualizada e o formulário remonta já refletindo o que está gravado.
+function PlaylistSlideshowForm({ playlist }: { playlist: BroadcastPlaylistRecord }) {
+  const [state, formAction, pending] = useActionState(setPlaylistSlideshowAction, initialState);
+  useActionToast({ pending, error: state.error, successMessage: "Slideshow salvo." });
+  const idPrefix = `slideshow-${playlist.id}`;
+
+  return (
+    <details className="group rounded-panel border border-border/60 bg-muted/20">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <span className="flex items-center gap-2">
+          <ImageIcon className="size-3.5" aria-hidden="true" />
+          Slideshow das imagens
+        </span>
+        <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <form
+        key={[playlist.slideshowMotion, playlist.slideshowMotionStrength, playlist.slideshowTransition, playlist.slideshowTransitionMs].join("|")}
+        action={formAction}
+        className="space-y-3 border-t border-border/60 p-3"
+      >
+        <input type="hidden" name="playlistId" value={playlist.id} />
+        <p className="text-xs text-muted-foreground">
+          Vale para todas as imagens desta playlist (vídeos não mudam). Uma playlist só de imagens toca como slideshow, cada uma pelo tempo definido no item.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${idPrefix}-motion`}>Movimento da imagem</label>
+            <Select name="motion" defaultValue={playlist.slideshowMotion}>
+              <SelectTrigger id={`${idPrefix}-motion`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SLIDESHOW_MOTIONS.map((motion) => (
+                  <SelectItem key={motion} value={motion}>{SLIDESHOW_MOTION_LABELS[motion]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${idPrefix}-strength`}>Intensidade do movimento</label>
+            <Select name="motionStrength" defaultValue={playlist.slideshowMotionStrength}>
+              <SelectTrigger id={`${idPrefix}-strength`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SLIDESHOW_MOTION_STRENGTHS.map((strength) => (
+                  <SelectItem key={strength} value={strength}>{SLIDESHOW_MOTION_STRENGTH_LABELS[strength]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${idPrefix}-transition`}>Transição entre imagens</label>
+            <Select name="transition" defaultValue={playlist.slideshowTransition}>
+              <SelectTrigger id={`${idPrefix}-transition`} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SLIDESHOW_TRANSITIONS.map((transition) => (
+                  <SelectItem key={transition} value={transition}>{SLIDESHOW_TRANSITION_LABELS[transition]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`${idPrefix}-ms`}>Duração da transição (ms)</label>
+            <Input
+              id={`${idPrefix}-ms`}
+              name="transitionMs"
+              type="number"
+              inputMode="numeric"
+              min={SLIDESHOW_TRANSITION_MIN_MS}
+              max={SLIDESHOW_TRANSITION_MAX_MS}
+              step={50}
+              defaultValue={playlist.slideshowTransitionMs}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              De {SLIDESHOW_TRANSITION_MIN_MS} a {SLIDESHOW_TRANSITION_MAX_MS} ms — transições rápidas (500–900) ficam mais dinâmicas.
+            </p>
+          </div>
+        </div>
+        <Button type="submit" size="sm" disabled={pending}>Salvar slideshow</Button>
+      </form>
+    </details>
+  );
+}
+
 // Mesmo modelo de card das Telas (outputs-section.tsx) — pedido explícito: "vamos aplicar o mesmo
 // modelo de cards para as Playlists". Card fechável (botão na CardAction, não mais Accordion:
 // aqui quem controla aberto/fechado é o operador, não um disclosure nativo) mantendo Nome + badge
@@ -1489,6 +1592,7 @@ function PlaylistCard({
               </p>
             )}
           </div>
+          <PlaylistSlideshowForm playlist={playlist} />
           <div className="border-t border-border/60 pt-4">
             <PlaylistAddSection playlist={playlist} agendas={agendas} agendaEvents={agendaEvents} />
           </div>

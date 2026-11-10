@@ -35,6 +35,7 @@ import {
   deleteScheduledAlert,
   duplicateOutput,
   duplicatePlaylist,
+  setPlaylistSlideshow,
   importAgendaCsv,
   inspectVideosFolder,
   listConnectedOutputIps,
@@ -206,6 +207,24 @@ export async function duplicatePlaylistAction(_prevState: BroadcastActionState, 
   if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
 
   const result = await duplicatePlaylist({ playlistId: requireString(formData, "playlistId") });
+  if (!result.success) return { error: result.error.message };
+
+  revalidatePath(returnTo);
+  return { error: null };
+}
+
+// Estilo do slideshow de imagens da playlist (movimento + transição) — v1.10. Aparência, não
+// conteúdo: aplica na hora, sem fila de aprovação.
+export async function setPlaylistSlideshowAction(_prevState: BroadcastActionState, formData: FormData): Promise<BroadcastActionState> {
+  if (!(await isPluginActive("broadcast"))) return { error: PLUGIN_DISABLED_ERROR };
+
+  const result = await setPlaylistSlideshow({
+    playlistId: requireString(formData, "playlistId"),
+    motion: formData.get("motion"),
+    motionStrength: formData.get("motionStrength"),
+    transition: formData.get("transition"),
+    transitionMs: formData.get("transitionMs"),
+  });
   if (!result.success) return { error: result.error.message };
 
   revalidatePath(returnTo);

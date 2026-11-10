@@ -29,6 +29,8 @@ export { deletePlaylistHandler as deletePlaylist } from "./features/playlists/de
 export type { DeletePlaylistInput, DeletePlaylistResult } from "./features/playlists/delete-playlist/types";
 export { duplicatePlaylistHandler as duplicatePlaylist } from "./features/playlists/duplicate-playlist/handler";
 export type { DuplicatePlaylistInput, DuplicatePlaylistResult } from "./features/playlists/duplicate-playlist/types";
+export { setPlaylistSlideshowHandler as setPlaylistSlideshow } from "./features/playlists/set-playlist-slideshow/handler";
+export type { SetPlaylistSlideshowInput, SetPlaylistSlideshowResult } from "./features/playlists/set-playlist-slideshow/types";
 export { scanPlaylistFolderHandler as scanPlaylistFolder } from "./features/playlists/scan-playlist-folder/handler";
 // Saúde da pasta compartilhada de vídeos — selo na aba Playlists.
 export { inspectVideosFolderHandler as inspectVideosFolder } from "./features/playlists/inspect-videos-folder/handler";

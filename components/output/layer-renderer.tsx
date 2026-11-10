@@ -13,6 +13,7 @@ import {
   type BroadcastAgendaAnimationStyle,
   type BroadcastAgendaViewSize,
 } from "../../shared/settings";
+import { DEFAULT_PLAYLIST_SLIDESHOW, type BroadcastPlaylistSlideshow } from "../../shared/slideshow";
 import { isEventHappeningNow } from "../../shared/weekly-recurrence";
 import { isSameZonedCalendarDay } from "../../shared/timezone";
 import { resolveContrastPalette } from "./contrast-palette";
@@ -27,6 +28,7 @@ import {
   TV_HAPPENING_NOW_FOREGROUND,
 } from "./tv-tokens";
 import { StandbyScreen } from "./standby-screen";
+import { ImageSlideStack } from "./image-slideshow";
 import type {
   AgendaRotationEntry,
   AgendaRotationEvent,
@@ -589,6 +591,7 @@ function VideoSlide({
 function PlaylistLayer({
   items,
   newsArticles,
+  slideshow = DEFAULT_PLAYLIST_SLIDESHOW,
   fillMode = "contain",
   progressBarBottomOffsetPx = 0,
   timeZone,
@@ -596,6 +599,9 @@ function PlaylistLayer({
 }: {
   items: PlaylistItemSummary[];
   newsArticles: RegionNewsArticle[];
+  // Estilo do slideshow de imagens desta playlist (movimento + transição) — só afeta itens
+  // "image". Ausente = comportamento antigo (imagem parada, corte seco).
+  slideshow?: BroadcastPlaylistSlideshow;
   // "cover" preenche a caixa cortando o excesso — usado só com o drawer fechado (ver
   // VideoZoneLayer): a caixa já É a tela inteira ali, então cortar levemente é o comportamento
   // esperado de "fullscreen" (pedido explícito: "quando o drawer/agenda some o vídeo deve ficar
@@ -640,11 +646,13 @@ function PlaylistLayer({
       keepalive: true,
     }).catch(() => {});
   };
-  // O canal é essencialmente vídeo: uma tela sem playlist cadastrada (items vazio), ou com uma
-  // playlist que não tem NENHUM item de vídeo (só imagem/página/notícia/evento), cai na tela de
-  // espera branded em vez de rodar esses itens — pedido explícito. `slides` vazio já cobria o
-  // primeiro caso; `hasPlayableVideo` cobre o segundo.
-  const hasPlayableVideo = slides.some((slide) => slide.kind === "video");
+  // Uma tela sem playlist cadastrada (items vazio), ou com uma playlist sem NENHUMA mídia (nem
+  // vídeo nem imagem — só página/notícia/evento), cai na tela de espera branded em vez de rodar
+  // esses itens (pedido explícito original). Imagem passou a contar como mídia na v1.10: uma
+  // playlist só de imagens é um slideshow legítimo (antes caía na espera e a transmissão "ficava
+  // off"). `slides` vazio já cobria o primeiro caso; `hasPlayableMedia` cobre o segundo. Mesmo
+  // critério de hasPlayableContent em get-output-state.
+  const hasPlayableMedia = slides.some((slide) => slide.kind === "video" || slide.kind === "image");
 
   // Índice efetivo: do servidor quando sincronizado (clamp pra não estourar se a playlist mudou
   // entre o cursor e este refetch), local caso contrário.
@@ -732,16 +740,16 @@ function PlaylistLayer({
     return () => reportNowPlaying(null);
   }, [reportNowPlaying, effectiveIndex, items, items.length, nowPlayingItem]);
 
-  // Sem item resolvível, ou sem nenhum vídeo na playlist — tela de espera branded "nenhum
-  // conteúdo" no lugar do texto cru sobre tela preta (Fase 11).
-  if (!current || !hasPlayableVideo) {
+  // Sem item resolvível, ou sem nenhuma mídia (vídeo/imagem) na playlist — tela de espera branded
+  // "nenhum conteúdo" no lugar do texto cru sobre tela preta (Fase 11).
+  if (!current || !hasPlayableMedia) {
     return <StandbyScreen reason="no-content" brandLogoUrl={brandLogoUrl} />;
   }
 
   // fillMode decide object-contain (letterbox, drawer aberto) vs object-cover (preenche cortando
   // o excesso, drawer fechado/fullscreen) — ver o racional completo na prop acima. Com "contain",
   // a sobra do letterbox NÃO fica preta: um segundo <video>/<img> borrado atrás preenche a caixa
-  // (ver blurredFill logo abaixo). `relative` no elemento da frente garante que ele pinte por cima
+  // (ver o comentário "Fim da faixa preta" logo abaixo). `relative` no elemento da frente garante que ele pinte por cima
   // desse fundo absoluto (ambos z-index auto, ordem no DOM decide — o da frente vem depois).
   const objectFitClassName = fillMode === "cover" ? "object-cover" : "object-contain";
   const content =
@@ -761,9 +769,15 @@ function PlaylistLayer({
         }}
       />
     ) : current.kind === "image" ? (
-      // fonte é a rota de stream do plugin (arquivo local ou Blob), não um asset estático do bundle.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img key={current.key} src={`/api/broadcast/stream/${current.itemId}`} alt="" className={`relative h-full w-full ${objectFitClassName}`} />
+      // Sem key aqui de propósito: ImageSlideStack gerencia a troca entre imagens (mantém a que
+      // sai montada durante a transição). O fundo borrado do letterbox mora dentro de cada imagem.
+      <ImageSlideStack
+        slide={{ key: current.key, itemId: current.itemId, durationSeconds: current.durationSeconds }}
+        settings={slideshow}
+        objectFitClassName={objectFitClassName}
+        showBlurFill={fillMode === "contain"}
+        single={slides.length === 1}
+      />
     ) : current.kind === "webpage" ? (
       <WebpageSlide
         key={current.key}
@@ -791,30 +805,18 @@ function PlaylistLayer({
   // preenche a caixa inteira. Vídeo: o fundo é um SNAPSHOT do primeiro frame num <canvas> (dentro
   // do VideoSlide) — antes era um 2º <video> tocando o mesmo arquivo, mas dois decodes do mesmo
   // stream numa TV com poucos decoders de hardware travava o vídeo da frente (o de fundo seguia
-  // tocando). Imagem: continua um <img> (não compete por decoder de vídeo). "webpage"/"news"/
+  // tocando). Imagem: um <img> borrado dentro de cada ImageSlideLayer (não compete por decoder de
+  // vídeo; mora lá pra acompanhar a transição junto com a imagem da frente). "webpage"/"news"/
   // "agenda-event" já são full-bleed. Drawer fechado (fillMode "cover"): nada disso monta.
-  const blurredFill =
-    fillMode === "contain" && current.kind === "image" ? (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        key={`${current.key}-fill`}
-        src={`/api/broadcast/stream/${current.itemId}`}
-        alt=""
-        aria-hidden
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-        style={{ filter: "blur(24px) brightness(0.6)", transform: "scale(1.1)" }}
-      />
-    ) : null;
 
   // Clicável quando há mais de um item — pedido explícito: "se clicar na view muda o vídeo". Uma
   // camada transparente por cima (não onClick direto no <video>/<iframe>) garante o mesmo
   // comportamento pra qualquer tipo de slide, inclusive "webpage" (um clique dentro de um <iframe>
   // nunca borbulha pro elemento pai — é outro documento).
-  // overflow-hidden clipa o scale(1.1) do blurredFill (e já era o comportamento efetivo — os
+  // overflow-hidden clipa o scale(1.1) do fundo borrado (e já era o comportamento efetivo — os
   // wrappers de LayerRenderer/VideoZoneLayer acima também recortam).
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {blurredFill}
       {content}
       {slides.length > 1 && !sync && (
         <div
@@ -873,6 +875,7 @@ function PlaylistLayer({
 function VideoZoneLayer({
   items,
   newsArticles,
+  slideshow,
   footerOpen,
   brandLogoUrl,
   brandColor,
@@ -885,6 +888,7 @@ function VideoZoneLayer({
 }: {
   items: PlaylistItemSummary[];
   newsArticles: RegionNewsArticle[];
+  slideshow: BroadcastPlaylistSlideshow;
   footerOpen: boolean;
   brandLogoUrl: string | null;
   brandColor: string;
@@ -910,6 +914,7 @@ function VideoZoneLayer({
         <PlaylistLayer
           items={items}
           newsArticles={newsArticles}
+          slideshow={slideshow}
           fillMode={drawerOpen ? "contain" : "cover"}
           progressBarBottomOffsetPx={compactFooterVisible ? COMPACT_FOOTER_HEIGHT_PX : 0}
           timeZone={timeZone}
@@ -1887,6 +1892,7 @@ export function LayerRenderer({
   layer,
   drawerOpen,
   playlistItemsByPlaylistId,
+  playlistSlideshowByPlaylistId,
   resolvedAssetUrlByLayerId,
   regionWeather,
   regionNews,
@@ -1902,6 +1908,8 @@ export function LayerRenderer({
   layer: BroadcastLayerRecord;
   drawerOpen: boolean;
   playlistItemsByPlaylistId: Record<string, PlaylistItemSummary[]>;
+  // Estilo do slideshow de imagens por playlist (v1.10) — mesma chave de playlistItemsByPlaylistId.
+  playlistSlideshowByPlaylistId: Record<string, BroadcastPlaylistSlideshow>;
   resolvedAssetUrlByLayerId: Record<string, string>;
   regionWeather: RegionWeather | null;
   regionNews: RegionNewsArticle[];
@@ -1962,6 +1970,7 @@ export function LayerRenderer({
       {renderLayerContent(
         layer,
         playlistItemsByPlaylistId,
+        playlistSlideshowByPlaylistId,
         resolvedAssetUrlByLayerId,
         regionWeather,
         regionNews,
@@ -1982,6 +1991,7 @@ export function LayerRenderer({
 function renderLayerContent(
   layer: BroadcastLayerRecord,
   playlistItemsByPlaylistId: Record<string, PlaylistItemSummary[]>,
+  playlistSlideshowByPlaylistId: Record<string, BroadcastPlaylistSlideshow>,
   resolvedAssetUrlByLayerId: Record<string, string>,
   regionWeather: RegionWeather | null,
   regionNews: RegionNewsArticle[],
@@ -2007,6 +2017,7 @@ function renderLayerContent(
           key={playlistId ?? layer.id}
           items={items}
           newsArticles={regionNews}
+          slideshow={(playlistId ? playlistSlideshowByPlaylistId[playlistId] : undefined) ?? DEFAULT_PLAYLIST_SLIDESHOW}
           footerOpen={footerOpen}
           brandLogoUrl={brandLogoUrl}
           brandColor={brandColor}

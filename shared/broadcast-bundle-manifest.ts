@@ -1,5 +1,13 @@
 import { z } from "zod";
 import type { MediaVisibility } from "@venore/plugin-sdk/media";
+import {
+  SLIDESHOW_MOTIONS,
+  SLIDESHOW_MOTION_STRENGTHS,
+  SLIDESHOW_TRANSITIONS,
+  SLIDESHOW_TRANSITION_MAX_MS,
+  SLIDESHOW_TRANSITION_MIN_MS,
+  type BroadcastPlaylistSlideshow,
+} from "./slideshow";
 
 // Formato do pacote de export/import (telas + playlists + agenda) do Broadcast Studio — mesma
 // ideia de contexts/import-export/contracts/types.ts (IMPORT_EXPORT_FORMAT/_VERSION) e de
@@ -83,6 +91,9 @@ export type ExportedPlaylistItem = {
 export type ExportedPlaylist = {
   ref: string;
   name: string;
+  // Estilo do slideshow de imagens (v1.10). Opcional: pacote exportado antes da v1.10 não traz — a
+  // playlist importada fica no padrão (imagem parada, corte seco).
+  slideshow?: BroadcastPlaylistSlideshow;
   items: ExportedPlaylistItem[];
 };
 
@@ -163,9 +174,17 @@ const exportedPlaylistItemSchema = z.object({
   withAudio: z.boolean(),
 });
 
+const exportedSlideshowSchema = z.object({
+  motion: z.enum(SLIDESHOW_MOTIONS),
+  motionStrength: z.enum(SLIDESHOW_MOTION_STRENGTHS),
+  transition: z.enum(SLIDESHOW_TRANSITIONS),
+  transitionMs: z.number().int().min(SLIDESHOW_TRANSITION_MIN_MS).max(SLIDESHOW_TRANSITION_MAX_MS),
+});
+
 const exportedPlaylistSchema = z.object({
   ref: z.string().min(1),
   name: z.string().min(1),
+  slideshow: exportedSlideshowSchema.optional(),
   items: z.array(exportedPlaylistItemSchema),
 });
 

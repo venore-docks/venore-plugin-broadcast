@@ -66,10 +66,19 @@ export const broadcastLayers = broadcastSchema.table(
 
 // folderPath é relativo à raiz configurada em contexts/settings (broadcast.rootFolder), nunca um
 // path absoluto vindo de fora — o scan (Fase 2) resolve e valida contra a raiz antes de gravar.
-export const broadcastPlaylists = broadcastSchema.table("playlists", {
+export const broadcastPlaylists = broadcastSchema.table(
+  "playlists",
+  {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
   folderPath: text("folder_path"),
+  // Slideshow de imagens (v1.10) — movimento sutil + transição entre imagens, por playlist.
+  // Defaults = comportamento de antes (imagem parada, corte seco). Valores validados em
+  // shared/slideshow.ts; o CHECK abaixo é a rede de segurança no banco.
+  slideshowMotion: text("slideshow_motion").notNull().default("none"),
+  slideshowMotionStrength: text("slideshow_motion_strength").notNull().default("medium"),
+  slideshowTransition: text("slideshow_transition").notNull().default("none"),
+  slideshowTransitionMs: integer("slideshow_transition_ms").notNull().default(700),
   // Playlist dedicada a UMA tela (modelo 1:1 — pedido explícito: "criar playlist dedicada por
   // tela", em vez de uma playlist compartilhada por várias telas). Preenchido quando a playlist
   // nasce junto com a saída (create-output/store.ts); null pra playlist "compartilhada" criada à
@@ -85,7 +94,20 @@ export const broadcastPlaylists = broadcastSchema.table("playlists", {
   ownerOutputId: text("owner_output_id").references((): AnyPgColumn => broadcastOutputs.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+  },
+  (table) => [
+    check(
+      "broadcast_playlists_slideshow_motion_check",
+      sql`${table.slideshowMotion} in ('none','zoom-in','zoom-out','pan-left','pan-right','pan-up','pan-down','mix')`,
+    ),
+    check("broadcast_playlists_slideshow_strength_check", sql`${table.slideshowMotionStrength} in ('soft','medium','strong')`),
+    check(
+      "broadcast_playlists_slideshow_transition_check",
+      sql`${table.slideshowTransition} in ('none','fade','slide','zoom','wipe','mix')`,
+    ),
+    check("broadcast_playlists_slideshow_transition_ms_check", sql`${table.slideshowTransitionMs} between 200 and 3000`),
+  ],
+);
 
 // mediaAssetId é texto solto, sem FK pra media.assets: um plugin não pode importar
 // contexts/media/database/schema (regra 7/8 do AGENTS.md — vale pra leitura e escrita). Resolução

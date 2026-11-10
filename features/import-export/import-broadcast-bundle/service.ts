@@ -14,6 +14,7 @@ import { addMediaAssetPlaylistItem } from "../../playlists/add-media-asset-playl
 import { addNewsPlaylistItem } from "../../playlists/add-news-playlist-item/service";
 import { addWebpagePlaylistItem } from "../../playlists/add-webpage-playlist-item/service";
 import { createPlaylist } from "../../playlists/create-playlist/service";
+import { setPlaylistSlideshow } from "../../playlists/set-playlist-slideshow/service";
 import { listPlaylists } from "../../playlists/list-playlists/service";
 import { togglePlaylistItemVisibility } from "../../playlists/toggle-playlist-item-visibility/service";
 import { createOutput } from "../../outputs/create-output/service";
@@ -211,6 +212,14 @@ export async function importBroadcastBundle(command: ImportBroadcastBundleComman
     playlistIdByRef.set(playlist.name, createdPlaylist.data.id);
 
     const itemNotes: string[] = [];
+    if (playlist.slideshow) {
+      const slideshowResult = await setPlaylistSlideshow({
+        playlistId: createdPlaylist.data.id,
+        slideshow: playlist.slideshow,
+        actorId: command.actorId,
+      });
+      if (!slideshowResult.success) itemNotes.push(`Estilo do slideshow não aplicado: ${slideshowResult.error.message}`);
+    }
     for (const item of playlist.items) {
       const itemLabel = item.title ?? item.sourceType;
 

@@ -13,7 +13,15 @@ export async function duplicatePlaylistWithItems(source: BroadcastPlaylistRecord
   return db.transaction(async (tx) => {
     const [copy] = await tx
       .insert(broadcastPlaylists)
-      .values({ name: `Cópia de ${source.name}`, folderPath: source.folderPath, ownerOutputId: null })
+      .values({
+        name: `Cópia de ${source.name}`,
+        folderPath: source.folderPath,
+        ownerOutputId: null,
+        slideshowMotion: source.slideshowMotion,
+        slideshowMotionStrength: source.slideshowMotionStrength,
+        slideshowTransition: source.slideshowTransition,
+        slideshowTransitionMs: source.slideshowTransitionMs,
+      })
       .returning();
 
     const items = await tx

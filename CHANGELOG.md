@@ -4,7 +4,23 @@ Todas as mudanças notáveis do Broadcast Studio (`@venore/plugin-broadcast`), p
 livre — este arquivo é pra alguém entender rápido "o que mudou de X pra Y" sem entrar no `git log`;
 as tags no GitHub continuam sendo a fonte exata de cada release.
 
-## v1.9.16
+## v1.10.0
+
+- **Playlist só de imagens agora toca (slideshow).** Antes, uma playlist sem nenhum vídeo caía na tela
+  "Nenhum conteúdo programado" e a transmissão ficava off. Agora vídeo **ou** imagem bastam pra a tela
+  tocar; só página web/notícia/evento em destaque, sozinhos, continuam caindo na espera (ou no
+  fallback da tela). Cada imagem fica pelo tempo definido no item (padrão 15s).
+- **Estilo do slideshow por playlist** (card da playlist → "Slideshow das imagens"): movimento da imagem
+  (zoom in, zoom out, pan esquerda/direita/cima/baixo ou variado), intensidade (suave/médio/forte) e
+  transição entre imagens (dissolver, deslizar, zoom + fade, cortina ou variada) com duração de 200 a
+  3000 ms (padrão 700). "Variado" escolhe pela imagem, então todas as telas sincronizadas mostram o
+  mesmo efeito. Playlists existentes ficam como estavam (sem movimento, corte seco) até alguém ligar.
+- Aparência, não conteúdo: salvar o estilo vale na hora, sem passar pela fila de aprovação. As telas
+  pegam o estilo novo no próximo refresh de estado (até ~15s). "Congelar" também pausa o movimento.
+- Duplicar playlist e exportar/importar pacote levam o estilo junto (pacote antigo sem o campo importa
+  com o padrão).
+- Migration `0021_playlist_slideshow` (4 colunas `slideshow_*` em `playlists`, com CHECK de valores).
+
 
 - Agenda ligada ao plugin **Calendários** (dependência opcional): no admin da agenda, o campo "Eventos vindos
   do Calendários" liga a agenda a um setor (ex.: Faculdade Fidelis, Colégio Erasto Gaertner). Os Eventos

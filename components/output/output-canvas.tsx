@@ -412,6 +412,16 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
           // A StandbyScreen (Fase 11) carrega os próprios @keyframes num <style> local — ver
           // components/output/standby-screen.tsx — pra continuar íntegra renderizada fora deste canvas.
           "@keyframes broadcast-news-parallax { from { transform: scale(1) translate(0, 0); } to { transform: scale(1.1) translate(-2%, -2%); } }" +
+          // Slideshow de imagens (v1.10, ver ImageSlideLayer em layer-renderer.tsx + shared/slideshow.ts).
+          // Movimento lê --kb-from/--kb-to do próprio <img> (um @keyframes serve pra todos os
+          // movimentos/intensidades); entrada/saída são as transições entre imagens. O slide que
+          // SAI só ganha animação própria no "deslizar" — nos outros, fica sob o que entra até ser coberto.
+          "@keyframes broadcast-slide-motion { from { transform: var(--kb-from); } to { transform: var(--kb-to); } }" +
+          "@keyframes broadcast-slide-enter-fade { from { opacity: 0; } to { opacity: 1; } }" +
+          "@keyframes broadcast-slide-enter-slide { from { transform: translate3d(100%, 0, 0); } to { transform: translate3d(0, 0, 0); } }" +
+          "@keyframes broadcast-slide-leave-slide { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-100%, 0, 0); } }" +
+          "@keyframes broadcast-slide-enter-zoom { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: scale(1); } }" +
+          "@keyframes broadcast-slide-enter-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }" +
           // Deriva lenta do fundo borrado do letterbox (VideoSlide, layer-renderer.tsx) — mantém
           // movimento entre as amostras do frame e enquanto o vídeo está pausado. scale sempre > 1
           // pra o blur não revelar borda transparente.
@@ -475,6 +485,7 @@ export function OutputCanvas({ token, initialState }: { token: string; initialSt
                     layer={layer}
                     drawerOpen={effectiveDrawerOpen}
                     playlistItemsByPlaylistId={state.playlistItemsByPlaylistId}
+                    playlistSlideshowByPlaylistId={state.playlistSlideshowByPlaylistId ?? {}}
                     resolvedAssetUrlByLayerId={state.resolvedAssetUrlByLayerId}
                     regionWeather={state.regionWeather}
                     regionNews={state.regionNews}

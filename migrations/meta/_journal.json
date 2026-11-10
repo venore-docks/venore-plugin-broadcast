@@ -148,6 +148,13 @@
       "when": 1794315539418,
       "tag": "0020_agenda_calendarios",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794332419898,
+      "tag": "0021_playlist_slideshow",
+      "breakpoints": true
     }
   ]
 }

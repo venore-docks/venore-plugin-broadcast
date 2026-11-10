@@ -38,7 +38,9 @@ const findAgendaEventById = vi.fn();
 const findPlaylistScheduleForOutput = vi.fn();
 const findAllEnabledScheduledAlerts = vi.fn();
 const findLiveStreamById = vi.fn();
+const findPlaylistSlideshowRow = vi.fn();
 vi.mock("./store", () => ({
+  findPlaylistSlideshowRow: (...args: unknown[]) => findPlaylistSlideshowRow(...args),
   findOutputByToken: (...args: unknown[]) => findOutputByToken(...args),
   findSceneById: (...args: unknown[]) => findSceneById(...args),
   findLayersBySceneId: (...args: unknown[]) => findLayersBySceneId(...args),
@@ -74,6 +76,9 @@ describe("getOutputState", () => {
     findPlaylistScheduleForOutput.mockReset();
     findAllEnabledScheduledAlerts.mockReset();
     findLiveStreamById.mockReset();
+    findPlaylistSlideshowRow.mockReset();
+    // Sem linha = estilo padrão (imagem parada, corte seco) — os testes de slideshow sobrescrevem.
+    findPlaylistSlideshowRow.mockResolvedValue(null);
     // Sem aviso agendado por padrão — os testes de avisos agendados sobrescrevem.
     findAllEnabledScheduledAlerts.mockResolvedValue([]);
     // Defaults sensatos pra testes que disparam a resolução (agora a camada "video" também
@@ -134,6 +139,7 @@ describe("getOutputState", () => {
         scene: null,
         layers: [],
         playlistItemsByPlaylistId: {},
+        playlistSlideshowByPlaylistId: {},
         resolvedAssetUrlByLayerId: {},
         regionWeather: null,
         regionNews: [],
@@ -196,6 +202,59 @@ describe("getOutputState", () => {
       ],
     });
     expect(result.data.resolvedAssetUrlByLayerId).toEqual({ l2: "https://blob.example/logo.png" });
+  });
+
+  it("treats an images-only playlist as playable content (slideshow), but webpage/news-only still is not", async () => {
+    findOutputByToken.mockResolvedValue({ id: "o1", drawerOpen: false, currentSceneId: "s1" });
+    findSceneById.mockResolvedValue({ id: "s1", name: "Principal" });
+    findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "video", config: { playlistId: "p1" } }]);
+    findVisiblePlaylistItemsByPlaylistId.mockResolvedValue([
+      { id: "item-1", order: 0, sourceType: "local", relativePath: "a.jpg", mediaAssetId: null, url: null, durationSeconds: 8, withAudio: false },
+      { id: "item-2", order: 1, sourceType: "local", relativePath: "b.png", mediaAssetId: null, url: null, durationSeconds: null, withAudio: false },
+    ]);
+
+    const { getOutputState } = await import("./service");
+    const images = await getOutputState({ token: "tok-1" });
+    expect(images.success && images.data.hasPlayableContent).toBe(true);
+
+    findVisiblePlaylistItemsByPlaylistId.mockResolvedValue([
+      { id: "item-3", order: 0, sourceType: "webpage", relativePath: null, mediaAssetId: null, url: "/cursos", durationSeconds: null, withAudio: false },
+    ]);
+    const webpageOnly = await getOutputState({ token: "tok-1" });
+    expect(webpageOnly.success && webpageOnly.data.hasPlayableContent).toBe(false);
+  });
+
+  it("returns the normalized slideshow style per playlist (padrão quando a linha some ou tem lixo)", async () => {
+    findOutputByToken.mockResolvedValue({ id: "o1", drawerOpen: false, currentSceneId: "s1" });
+    findSceneById.mockResolvedValue({ id: "s1", name: "Principal" });
+    findLayersBySceneId.mockResolvedValue([{ id: "l1", type: "video", config: { playlistId: "p1" } }]);
+    findVisiblePlaylistItemsByPlaylistId.mockResolvedValue([]);
+    findPlaylistSlideshowRow.mockResolvedValue({
+      slideshowMotion: "pan-left",
+      slideshowMotionStrength: "soft",
+      slideshowTransition: "wipe",
+      slideshowTransitionMs: 900,
+    });
+
+    const { getOutputState } = await import("./service");
+    const styled = await getOutputState({ token: "tok-1" });
+    expect(styled.success && styled.data.playlistSlideshowByPlaylistId).toEqual({
+      p1: { motion: "pan-left", motionStrength: "soft", transition: "wipe", transitionMs: 900 },
+    });
+
+    findPlaylistSlideshowRow.mockResolvedValue({
+      slideshowMotion: "spin",
+      slideshowMotionStrength: "soft",
+      slideshowTransition: "none",
+      slideshowTransitionMs: 99999,
+    });
+    const garbage = await getOutputState({ token: "tok-1" });
+    expect(garbage.success && garbage.data.playlistSlideshowByPlaylistId.p1).toEqual({
+      motion: "none",
+      motionStrength: "soft",
+      transition: "none",
+      transitionMs: 3000,
+    });
   });
 
   it("defaults webpage items to 60s and news items to 30s when no duration is set", async () => {

@@ -1,3 +1,5 @@
+import type { SlideshowMotion, SlideshowMotionStrength, SlideshowTransition } from "../shared/slideshow";
+
 export type BroadcastSceneRecord = {
   id: string;
   key: string;
@@ -46,6 +48,12 @@ export type BroadcastPlaylistRecord = {
   // Id da tela dona desta playlist (modelo 1:1 — ver database/schema/index.ts). null = playlist
   // "compartilhada" criada à mão, sem tela dona.
   ownerOutputId: string | null;
+  // Slideshow de imagens (v1.10) — ver shared/slideshow.ts. Colunas cruas aqui (o admin lê/edita);
+  // a view da TV recebe o objeto já normalizado em BroadcastOutputState.playlistSlideshowByPlaylistId.
+  slideshowMotion: SlideshowMotion;
+  slideshowMotionStrength: SlideshowMotionStrength;
+  slideshowTransition: SlideshowTransition;
+  slideshowTransitionMs: number;
   createdAt: Date;
   updatedAt: Date;
 };

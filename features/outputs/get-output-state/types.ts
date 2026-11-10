@@ -9,6 +9,7 @@ import type {
   RegionWeather,
 } from "../../../contracts/types";
 import type { BroadcastAgendaAnimationStyle, BroadcastAgendaViewSize } from "../../../shared/settings";
+import type { BroadcastPlaylistSlideshow } from "../../../shared/slideshow";
 
 export type GetOutputStateQuery = { token: string };
 
@@ -47,6 +48,9 @@ export type BroadcastOutputState = {
   scene: BroadcastSceneRecord | null;
   layers: BroadcastLayerRecord[];
   playlistItemsByPlaylistId: Record<string, PlaylistItemSummary[]>;
+  // Estilo do slideshow de imagens (movimento + transição) por playlist — mesma chave de
+  // playlistItemsByPlaylistId, sempre presente pra toda playlist resolvida (padrão = imagem parada).
+  playlistSlideshowByPlaylistId: Record<string, BroadcastPlaylistSlideshow>;
   resolvedAssetUrlByLayerId: Record<string, string>;
   regionWeather: RegionWeather | null;
   regionNews: RegionNewsArticle[];

@@ -18,6 +18,7 @@ import {
 } from "../../../shared/settings";
 import { resolveSyncCursor } from "../../../runtime/sync-cursor";
 import { isWithinActiveHours, resolveScheduledPlaylistId } from "../../../shared/playlist-schedule";
+import { normalizeSlideshow, type BroadcastPlaylistSlideshow } from "../../../shared/slideshow";
 import { normalizeTimeZone } from "../../../shared/timezone";
 import { streamableContentTypeForExtension } from "../../../shared/video-extensions";
 import { resolveEventEndDate, resolveEventOccurrenceDate } from "../../../shared/weekly-recurrence";
@@ -34,6 +35,7 @@ import {
   findLiveStreamById,
   findOutputByToken,
   findPlaylistScheduleForOutput,
+  findPlaylistSlideshowRow,
   findSceneById,
   findVisiblePlaylistItemsByPlaylistId,
 } from "./store";
@@ -326,9 +328,13 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   }
 
   const playlistItemsByPlaylistId: Record<string, PlaylistItemSummary[]> = {};
+  const playlistSlideshowByPlaylistId: Record<string, BroadcastPlaylistSlideshow> = {};
   for (const playlistId of videoPlaylistIds) {
     const items = await findVisiblePlaylistItemsByPlaylistId(playlistId);
     playlistItemsByPlaylistId[playlistId] = await Promise.all(items.map((item) => classifyPlaylistItem(item, timeZone)));
+    // Playlist apagada (row null) ou linha antiga: normalizeSlideshow cai no padrão (imagem parada,
+    // corte seco) — a view nunca precisa tratar ausência.
+    playlistSlideshowByPlaylistId[playlistId] = normalizeSlideshow((await findPlaylistSlideshowRow(playlistId)) ?? {});
   }
   // "news" agora é um item de playlist manipulável (posição/duração próprias), não mais um
   // checkbox na config da layer — precisa resolver os artigos sempre que algum item classificar
@@ -336,10 +342,12 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
   const anyPlaylistHasNewsItem = Object.values(playlistItemsByPlaylistId).some((items) =>
     items.some((item) => item.kind === "news"),
   );
-  // "O canal é essencialmente vídeo" — mesmo critério de PlaylistLayer.hasPlayableVideo: sem
-  // nenhum item de vídeo tocável, a view cai numa tela de espera (ou no fallback da saída).
+  // Mesmo critério de PlaylistLayer.hasPlayableMedia: a playlist só segura a tela se tiver vídeo OU
+  // imagem. Antes era só vídeo ("o canal é essencialmente vídeo") e uma playlist só de imagens caía
+  // na tela de espera — agora é um slideshow legítimo (v1.10). Só página web/notícia/evento
+  // continua sem bastar sozinho. Sem mídia tocável, a view cai na espera (ou no fallback da saída).
   const hasPlayableContent = Object.values(playlistItemsByPlaylistId).some((items) =>
-    items.some((item) => item.kind === "video"),
+    items.some((item) => item.kind === "video" || item.kind === "image"),
   );
 
   // Reprodução sincronizada (v1.8, v1.8.4 — sempre ligada, independente de grupo): toda tela que
@@ -457,6 +465,7 @@ export async function getOutputState(query: GetOutputStateQuery): Promise<GetOut
       scene,
       layers,
       playlistItemsByPlaylistId,
+      playlistSlideshowByPlaylistId,
       resolvedAssetUrlByLayerId,
       regionWeather,
       regionNews,

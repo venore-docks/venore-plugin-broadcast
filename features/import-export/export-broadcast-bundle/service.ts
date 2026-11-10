@@ -25,6 +25,7 @@ import {
   type ExportedPlaylistItem,
   type ExportedPlaylistItemSourceType,
 } from "../../../shared/broadcast-bundle-manifest";
+import { normalizeSlideshow } from "../../../shared/slideshow";
 import type { BroadcastAgendaEventRecord, BroadcastPlaylistItemRecord } from "../../../contracts/types";
 import type { ExportBroadcastBundleAssetFile, ExportBroadcastBundleResult } from "./types";
 
@@ -271,7 +272,12 @@ export async function exportBroadcastBundle(options: { outputIds?: string[] } = 
       });
     }
 
-    exportedPlaylists.push({ ref: playlist.name, name: playlist.name, items: exportedItems });
+    exportedPlaylists.push({
+      ref: playlist.name,
+      name: playlist.name,
+      slideshow: normalizeSlideshow(playlist),
+      items: exportedItems,
+    });
   }
 
   // ---- Telas ----

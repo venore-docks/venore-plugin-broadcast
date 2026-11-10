@@ -11,6 +11,7 @@ import {
   broadcastOutputPlaylistSchedule,
   broadcastOutputs,
   broadcastPlaylistItems,
+  broadcastPlaylists,
   broadcastScenes,
   broadcastScheduledAlerts,
   broadcastTakeover,
@@ -225,6 +226,28 @@ export async function findLiveStreamById(id: string): Promise<{ videoId: string;
     .select({ videoId: broadcastLiveStreams.videoId, title: broadcastLiveStreams.title })
     .from(broadcastLiveStreams)
     .where(eq(broadcastLiveStreams.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+// Estilo do slideshow (movimento + transição de imagens) de uma playlist — só as colunas
+// slideshow_*, lidas cruas e normalizadas no service (shared/slideshow.ts). null = playlist não
+// existe mais (config da camada apontando pra uma playlist apagada).
+export async function findPlaylistSlideshowRow(playlistId: string): Promise<{
+  slideshowMotion: string;
+  slideshowMotionStrength: string;
+  slideshowTransition: string;
+  slideshowTransitionMs: number;
+} | null> {
+  const [row] = await db
+    .select({
+      slideshowMotion: broadcastPlaylists.slideshowMotion,
+      slideshowMotionStrength: broadcastPlaylists.slideshowMotionStrength,
+      slideshowTransition: broadcastPlaylists.slideshowTransition,
+      slideshowTransitionMs: broadcastPlaylists.slideshowTransitionMs,
+    })
+    .from(broadcastPlaylists)
+    .where(eq(broadcastPlaylists.id, playlistId))
     .limit(1);
   return row ?? null;
 }
