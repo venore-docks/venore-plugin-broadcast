@@ -10,6 +10,7 @@ As regras são as do core — não copie para cá, leia lá quando a tarefa toca
   Todo "AGENTS.md §N" citado em comentário deste repo se refere ao **AGENTS.md do core**.
 - `.claude/rules/plugin-routes.md` do core: toda rota mora em `routes/route-table.ts`, nunca em `app/`.
 - `.claude/rules/css-tokens.md` do core: só tokens shadcn (`bg-card`, `text-muted-foreground`…), sem cor crua.
+- `.claude/rules/ui-design.md` do core: telas que guiam — cor só para o que pede ação, uma ação principal por bloco, o secundário recolhido, um nível de caixa. Rode o checklist do fim da regra antes de entregar uma tela.
 - Contexts do core só via barrel (`@/contexts/<nome>`) ou `contracts/`; outro plugin só via barrel, com a
   dependência declarada no `manifest.ts`.
 - Schema: migration gerada com `drizzle-kit generate` (`drizzle.config.ts`), nunca editar `_journal.json` à mão.
